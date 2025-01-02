@@ -40,15 +40,15 @@ jobs:
           cd build
           zip -r stable_diffusion.zip ./*
           TIMESTAMP=$(date +%s)
-          TIMESTAMPED_ZIP="stable_diffusion_${TIMESTAMP}.zip"
-          mv stable_diffusion.zip $TIMESTAMPED_ZIP
+          export TIMESTAMPED_ZIP="stable_diffusion_${TIMESTAMP}.zip"
+          mv stable_diffusion.zip "$TIMESTAMPED_ZIP"
           cd ..
+          echo "TIMESTAMPED_ZIP=$TIMESTAMPED_ZIP" >> $GITHUB_ENV
 
       # Step 3: Upload Lambda Code to S3
       - name: Upload Lambda Code
         run: |
-          aws s3 cp build/$TIMESTAMPED_ZIP s3://creationism-lambda-code/$TIMESTAMPED_ZIP
-          echo "TIMESTAMPED_ZIP=$TIMESTAMPED_ZIP" >> $GITHUB_ENV
+          aws s3 cp build/${{ env.TIMESTAMPED_ZIP }} s3://creationism-lambda-code/${{ env.TIMESTAMPED_ZIP }}
 
       # Step 4: Deploy CloudFormation Stack
       - name: Deploy CloudFormation Stack
