@@ -22,24 +22,20 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
 
-      # Ensure S3 bucket exists
-      - name: Create S3 Bucket for Lambda Code
+      # Step 1: Create S3 Bucket for Lambda Code
+      - name: Ensure S3 Bucket for Lambda Exists
         run: |
           aws s3api head-bucket --bucket creationism-lambda-code || \
           aws s3api create-bucket --bucket creationism-lambda-code --region ${{ secrets.AWS_REGION }} --create-bucket-configuration LocationConstraint=${{ secrets.AWS_REGION }}
 
-      # Package Lambda function code
-      - name: Package Lambda Code
+      # Step 2: Upload Lambda Code
+      - name: Package and Upload Lambda Code
         run: |
           mkdir -p build
           zip -j build/stable_diffusion.zip lambda/stable_diffusion.py
+          aws s3 cp build/stable_diffusion.zip s3://creationism-lambda-code/stable_diffusion.zip
 
-      # Upload Lambda code to S3
-      - name: Upload Lambda Code to S3
-        run: |
-          aws s3 cp build/stable_diffusion.zip s3://creationism-lambda-code/
-
-      # Deploy CloudFormation stack
+      # Step 3: Deploy Remaining CloudFormation Stack
       - name: Deploy CloudFormation Stack
         run: |
           aws cloudformation deploy \

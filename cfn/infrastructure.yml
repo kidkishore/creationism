@@ -18,7 +18,6 @@ Resources:
   LambdaExecutionRole:
     Type: AWS::IAM::Role
     Properties:
-      RoleName: creationism_lambda_execution_role
       AssumeRolePolicyDocument:
         Version: "2012-10-17"
         Statement:
@@ -36,9 +35,10 @@ Resources:
                   - s3:PutObject
                   - s3:GetObject
                 Resource:
+                  - !Sub "arn:aws:s3:::creationism-lambda-code/*"
                   - !Sub "arn:aws:s3:::creationism-image-storage/*"
 
-  # Lambda Function for Stable Diffusion
+  # Lambda Function
   StableDiffusionFunction:
     Type: AWS::Lambda::Function
     Properties:
@@ -47,19 +47,12 @@ Resources:
       Runtime: python3.9
       Role: !GetAtt LambdaExecutionRole.Arn
       Code:
-        S3Bucket: !Ref LambdaCodeBucket
+        S3Bucket: creationism-lambda-code
         S3Key: stable_diffusion.zip
       Environment:
         Variables:
           BUCKET_NAME: creationism-image-storage
       Timeout: 60
-
-  # S3 Bucket for Lambda Code
-  LambdaCodeBucket:
-    Type: AWS::S3::Bucket
-    Properties:
-      BucketName: creationism-lambda-code
-      AccessControl: Private
 
   # API Gateway
   ApiGateway:
