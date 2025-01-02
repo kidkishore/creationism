@@ -37,6 +37,7 @@ jobs:
           pip install requests boto3
           deactivate
           cp lambda/stable_diffusion.py build/
+          cp -r build/venv/lib/python3.*/site-packages/* build/
           cd build
           zip -r stable_diffusion.zip ./*
           TIMESTAMP=$(date +%s)
