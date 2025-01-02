@@ -43,5 +43,6 @@ jobs:
             --template-file cfn/infrastructure.yml \
             --capabilities CAPABILITY_NAMED_IAM \
             --parameter-overrides \
-              LambdaCodeBucket=creationism-lambda-code \
-              LambdaCodeKey=stable_diffusion.zip
+            LambdaCodeBucket=creationism-lambda-code \
+            LambdaCodeKey=stable_diffusion.zip \
+            HuggingFaceApiKey=${HUGGING_FACE_API_KEY}

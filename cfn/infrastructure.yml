@@ -12,7 +12,7 @@ Parameters:
     Type: String
     Description: Key of the Lambda function zip file in the S3 bucket.
 
-  HUGGING_FACE_API_KEY:
+  HuggingFaceApiKey:
     Type: String
     Description: The Hugging Face API key for Stable Diffusion.
 
@@ -68,7 +68,7 @@ Resources:
       Environment:
         Variables:
           BUCKET_NAME: !Ref ImageStorageBucket
-          HUGGING_FACE_API_KEY: !Ref HUGGING_FACE_API_KEY
+          HUGGING_FACE_API_KEY: !Ref HuggingFaceApiKey
       Timeout: 60
 
   # Lambda Permission for API Gateway
