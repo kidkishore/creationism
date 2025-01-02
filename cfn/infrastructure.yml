@@ -114,6 +114,7 @@ Resources:
         Type: AWS_PROXY
         Uri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${StableDiffusionFunction.Arn}/invocations"
 
+  # API Gateway Deployment
   ApiDeployment:
     Type: AWS::ApiGateway::Deployment
     Properties:
@@ -126,6 +127,7 @@ Resources:
     Type: AWS::ApiGateway::Stage
     Properties:
       RestApiId: !Ref ApiGateway
+      DeploymentId: !Ref ApiDeployment # Link the deployment
       StageName: prod
       MethodSettings:
         - DataTraceEnabled: true
