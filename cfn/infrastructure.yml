@@ -38,6 +38,18 @@ Resources:
                   - !Sub "arn:aws:s3:::creationism-lambda-code/*"
                   - !Sub "arn:aws:s3:::creationism-image-storage/*"
 
+        - PolicyName: LambdaCloudWatchLogsPolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource:
+                  - !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/*"
+
   # Lambda Function
   StableDiffusionFunction:
     Type: AWS::Lambda::Function
@@ -85,3 +97,4 @@ Resources:
       RestApiId: !Ref ApiGateway
       StageName: prod
     DependsOn: ApiGatewayMethod
+gi
