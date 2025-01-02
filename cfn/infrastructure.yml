@@ -97,4 +97,3 @@ Resources:
       RestApiId: !Ref ApiGateway
       StageName: prod
     DependsOn: ApiGatewayMethod
-gi
