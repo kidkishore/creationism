@@ -50,6 +50,29 @@ Resources:
                 Resource:
                   - !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/*"
 
+  # IAM Role for API Gateway Logging
+  ApiGatewayLoggingRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: apigateway.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: ApiGatewayCloudWatchLogsPolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: "arn:aws:logs:*:*:*"
+
   # Lambda Function
   StableDiffusionFunction:
     Type: AWS::Lambda::Function
@@ -97,3 +120,18 @@ Resources:
       RestApiId: !Ref ApiGateway
       StageName: prod
     DependsOn: ApiGatewayMethod
+
+  # Enable Logging for API Gateway Stage
+  ApiGatewayStageSettings:
+    Type: AWS::ApiGateway::Stage
+    Properties:
+      RestApiId: !Ref ApiGateway
+      StageName: prod
+      MethodSettings:
+        - DataTraceEnabled: true
+          HttpMethod: "*"
+          ResourcePath: "/*"
+          LoggingLevel: INFO
+      AccessLogSetting:
+        DestinationArn: !GetAtt ApiGatewayLoggingRole.Arn
+        Format: '{ "requestId":"$context.requestId","ip":"$context.identity.sourceIp","caller":"$context.identity.caller","user":"$context.identity.user","requestTime":"$context.requestTime","httpMethod":"$context.httpMethod","resourcePath":"$context.resourcePath","status":"$context.status","protocol":"$context.protocol","responseLength":"$context.responseLength"}'
