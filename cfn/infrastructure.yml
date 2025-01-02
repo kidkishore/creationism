@@ -120,15 +120,6 @@ Resources:
     Properties:
       RestApiId: !Ref ApiGateway
       StageName: prod
-    DependsOn: ApiGatewayMethod
-
-  # Enable Logging for API Gateway Stage
-  ApiGatewayStageSettings:
-    Type: AWS::ApiGateway::Stage
-    Properties:
-      RestApiId: !Ref ApiGateway
-      DeploymentId: !Ref ApiDeployment # Link the deployment
-      StageName: prod
       MethodSettings:
         - DataTraceEnabled: true
           HttpMethod: "*"
@@ -137,3 +128,4 @@ Resources:
       AccessLogSetting:
         DestinationArn: !GetAtt ApiGatewayLoggingRole.Arn
         Format: '{ "requestId":"$context.requestId","ip":"$context.identity.sourceIp","caller":"$context.identity.caller","user":"$context.identity.user","requestTime":"$context.requestTime","httpMethod":"$context.httpMethod","resourcePath":"$context.resourcePath","status":"$context.status","protocol":"$context.protocol","responseLength":"$context.responseLength"}'
+    DependsOn: ApiGatewayMethod
