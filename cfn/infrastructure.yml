@@ -1,8 +1,19 @@
 AWSTemplateFormatVersion: "2010-09-09"
 Description: Creationism Project - Full AWS Setup
 
+Parameters:
+  LambdaCodeBucket:
+    Type: String
+    Description: S3 bucket containing the Lambda function code.
+    AllowedPattern: "^[a-z0-9.-]+$"
+    ConstraintDescription: "Bucket name must consist of lowercase letters, numbers, dots, and hyphens."
+
+  LambdaCodeKey:
+    Type: String
+    Description: Key of the Lambda function zip file in the S3 bucket.
+
 Resources:
-  # S3 Bucket for Generated Images
+  # S3 Bucket for Image Storage
   ImageStorageBucket:
     Type: AWS::S3::Bucket
     Properties:
@@ -35,9 +46,8 @@ Resources:
                   - s3:PutObject
                   - s3:GetObject
                 Resource:
-                  - !Sub "arn:aws:s3:::creationism-lambda-code/*"
+                  - !Sub "arn:aws:s3:::${LambdaCodeBucket}/${LambdaCodeKey}"
                   - !Sub "arn:aws:s3:::creationism-image-storage/*"
-
         - PolicyName: LambdaCloudWatchLogsPolicy
           PolicyDocument:
             Version: "2012-10-17"
@@ -82,8 +92,8 @@ Resources:
       Runtime: python3.9
       Role: !GetAtt LambdaExecutionRole.Arn
       Code:
-        S3Bucket: creationism-lambda-code
-        S3Key: stable_diffusion.zip
+        S3Bucket: !Ref LambdaCodeBucket
+        S3Key: !Ref LambdaCodeKey
       Environment:
         Variables:
           BUCKET_NAME: creationism-image-storage

@@ -41,4 +41,7 @@ jobs:
           aws cloudformation deploy \
             --stack-name creationism-stack \
             --template-file cfn/infrastructure.yml \
-            --capabilities CAPABILITY_NAMED_IAM
+            --capabilities CAPABILITY_NAMED_IAM \
+            --parameter-overrides \
+              LambdaCodeBucket=creationism-lambda-code \
+              LambdaCodeKey=stable_diffusion.zip
