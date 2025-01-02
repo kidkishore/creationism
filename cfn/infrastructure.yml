@@ -119,6 +119,14 @@ Resources:
     Type: AWS::ApiGateway::Deployment
     Properties:
       RestApiId: !Ref ApiGateway
+    DependsOn: ApiGatewayMethod
+
+  # API Gateway Stage
+  ApiGatewayStage:
+    Type: AWS::ApiGateway::Stage
+    Properties:
+      RestApiId: !Ref ApiGateway
+      DeploymentId: !Ref ApiDeployment
       StageName: prod
       MethodSettings:
         - DataTraceEnabled: true
@@ -128,4 +136,3 @@ Resources:
       AccessLogSetting:
         DestinationArn: !GetAtt ApiGatewayLoggingRole.Arn
         Format: '{ "requestId":"$context.requestId","ip":"$context.identity.sourceIp","caller":"$context.identity.caller","user":"$context.identity.user","requestTime":"$context.requestTime","httpMethod":"$context.httpMethod","resourcePath":"$context.resourcePath","status":"$context.status","protocol":"$context.protocol","responseLength":"$context.responseLength"}'
-    DependsOn: ApiGatewayMethod
