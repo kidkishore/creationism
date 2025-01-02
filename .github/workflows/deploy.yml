@@ -3,16 +3,18 @@ name: Deploy CloudFormation
 on:
   push:
     branches:
-      - main # Run this workflow when changes are pushed to the main branch
+      - main
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
 
     steps:
+      # Checkout the repository
       - name: Checkout Repository
         uses: actions/checkout@v3
 
+      # Configure AWS credentials
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v2
         with:
@@ -20,6 +22,18 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
 
+      # Package Lambda function code
+      - name: Package Lambda Code
+        run: |
+          mkdir -p build
+          zip -j build/stable_diffusion.zip lambda/stable_diffusion.py
+
+      # Upload Lambda code to S3
+      - name: Upload Lambda Code to S3
+        run: |
+          aws s3 cp build/stable_diffusion.zip s3://creationism-lambda-code/
+
+      # Deploy CloudFormation stack
       - name: Deploy CloudFormation Stack
         run: |
           aws cloudformation deploy \

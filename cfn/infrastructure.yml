@@ -47,12 +47,19 @@ Resources:
       Runtime: python3.9
       Role: !GetAtt LambdaExecutionRole.Arn
       Code:
-        S3Bucket: my-lambda-code-bucket
+        S3Bucket: !Ref LambdaCodeBucket
         S3Key: stable_diffusion.zip
       Environment:
         Variables:
           BUCKET_NAME: creationism-image-storage
       Timeout: 60
+
+  # S3 Bucket for Lambda Code
+  LambdaCodeBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: creationism-lambda-code
+      AccessControl: Private
 
   # API Gateway
   ApiGateway:
