@@ -28,18 +28,29 @@ jobs:
           aws s3api head-bucket --bucket creationism-lambda-code || \
           aws s3api create-bucket --bucket creationism-lambda-code --region ${{ secrets.AWS_REGION }} --create-bucket-configuration LocationConstraint=${{ secrets.AWS_REGION }}
 
-      # Step 2: Package and Upload Lambda Code with Timestamp
-      - name: Package and Upload Lambda Code
+      # Step 2: Package Lambda Code with Dependencies
+      - name: Package Lambda Code
         run: |
           mkdir -p build
-          zip -j build/stable_diffusion.zip lambda/stable_diffusion.py
+          python3 -m venv build/venv
+          source build/venv/bin/activate
+          pip install requests boto3
+          deactivate
+          cp lambda/stable_diffusion.py build/
+          cd build
+          zip -r stable_diffusion.zip ./*
           TIMESTAMP=$(date +%s)
           TIMESTAMPED_ZIP="stable_diffusion_${TIMESTAMP}.zip"
-          mv build/stable_diffusion.zip build/$TIMESTAMPED_ZIP
+          mv stable_diffusion.zip $TIMESTAMPED_ZIP
+          cd ..
+
+      # Step 3: Upload Lambda Code to S3
+      - name: Upload Lambda Code
+        run: |
           aws s3 cp build/$TIMESTAMPED_ZIP s3://creationism-lambda-code/$TIMESTAMPED_ZIP
           echo "TIMESTAMPED_ZIP=$TIMESTAMPED_ZIP" >> $GITHUB_ENV
 
-      # Step 3: Deploy CloudFormation Stack
+      # Step 4: Deploy CloudFormation Stack
       - name: Deploy CloudFormation Stack
         run: |
           aws cloudformation deploy \
