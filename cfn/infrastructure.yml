@@ -131,7 +131,12 @@ Resources:
       RestApiId: !Ref ApiGateway
     DependsOn: ApiGatewayMethod
 
-  # API Gateway Stage
+  ApiGatewayLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/apigateway/${ApiGateway.Name}"
+      RetentionInDays: 30 # Optional: Adjust as needed
+
   ApiGatewayStage:
     Type: AWS::ApiGateway::Stage
     Properties:
@@ -144,5 +149,5 @@ Resources:
           ResourcePath: "/*"
           LoggingLevel: INFO
       AccessLogSetting:
-        DestinationArn: !GetAtt ApiGatewayLoggingRole.Arn
+        DestinationArn: !GetAtt ApiGatewayLogGroup.Arn
         Format: '{ "requestId":"$context.requestId","ip":"$context.identity.sourceIp","caller":"$context.identity.caller","user":"$context.identity.user","requestTime":"$context.requestTime","httpMethod":"$context.httpMethod","resourcePath":"$context.resourcePath","status":"$context.status","protocol":"$context.protocol","responseLength":"$context.responseLength"}'
