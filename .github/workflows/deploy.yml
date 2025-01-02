@@ -22,6 +22,12 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
 
+      # Ensure S3 bucket exists
+      - name: Create S3 Bucket for Lambda Code
+        run: |
+          aws s3api head-bucket --bucket creationism-lambda-code || \
+          aws s3api create-bucket --bucket creationism-lambda-code --region ${{ secrets.AWS_REGION }} --create-bucket-configuration LocationConstraint=${{ secrets.AWS_REGION }}
+
       # Package Lambda function code
       - name: Package Lambda Code
         run: |
