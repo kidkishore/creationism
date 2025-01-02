@@ -37,6 +37,12 @@ def lambda_handler(event, context):
             json={"inputs": prompt}
         )
 
+        # Debugging: Log the response status and content
+        print(f"Stable Diffusion API Response Status: {response.status_code}")
+        print(f"Stable Diffusion API Response Content: {response.text}")
+        print(f"Hugging Face API Key: {os.environ.get('HUGGING_FACE_API_KEY')}")
+
+
         if response.status_code != 200:
             return {
                 'statusCode': 500,
@@ -45,8 +51,9 @@ def lambda_handler(event, context):
                     'Access-Control-Allow-Headers': 'Content-Type',
                     'Access-Control-Allow-Methods': 'POST'
                 },
-                'body': json.dumps({'error': 'Failed to generate image'})
+                'body': json.dumps({'error': 'Failed to generate image', 'details': response.text})
             }
+
 
         # Get the image data
         image_bytes = response.content
