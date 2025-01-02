@@ -69,6 +69,7 @@ Resources:
         Variables:
           BUCKET_NAME: !Ref ImageStorageBucket
           HUGGING_FACE_API_KEY: !Ref HuggingFaceApiKey
+          FORCE_UPDATE: "1"
       Timeout: 60
 
   # Lambda Permission for API Gateway
