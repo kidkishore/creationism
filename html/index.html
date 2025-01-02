@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Creationism - Text to Animated 3D</title>
+    <style>
+      body {
+        padding: 20px;
+        font-family: Arial, sans-serif;
+        text-align: center;
+        background-color: #f4f4f4;
+      }
+      h1 {
+        color: #333;
+      }
+      input[type="text"] {
+        width: 60%;
+        margin: 10px 0;
+        padding: 10px;
+        font-size: 16px;
+      }
+      button {
+        padding: 10px 20px;
+        color: #fff;
+        font-size: 16px;
+        background-color: #007bff;
+        border: none;
+        cursor: pointer;
+      }
+      button:hover {
+        background-color: #0056b3;
+      }
+      #result {
+        margin-top: 20px;
+      }
+      #loader {
+        display: none;
+        margin-top: 20px;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Creationism</h1>
+    <p>Enter your description to generate an animated 3D model:</p>
+    <form id="textForm">
+      <input
+        type="text"
+        id="userInput"
+        placeholder="Describe your model..."
+        required
+      />
+      <button type="submit">Generate</button>
+    </form>
+    <div id="loader">
+      <p>Processing... Please wait.</p>
+    </div>
+    <div id="result"></div>
+
+    <script>
+      const apiUrl = "https://your-api-gateway-endpoint/prod/generate"; // Replace with your API Gateway URL
+
+      document
+        .getElementById("textForm")
+        .addEventListener("submit", async (e) => {
+          e.preventDefault();
+
+          const userInput = document.getElementById("userInput").value;
+          const loader = document.getElementById("loader");
+          const result = document.getElementById("result");
+
+          result.innerHTML = ""; // Clear previous results
+          loader.style.display = "block"; // Show loader
+
+          try {
+            // Send user input to the backend
+            const response = await fetch(apiUrl, {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({ text: userInput }),
+            });
+
+            if (!response.ok) {
+              throw new Error("Something went wrong. Please try again.");
+            }
+
+            const data = await response.json();
+            loader.style.display = "none";
+
+            // Display the result
+            result.innerHTML = `
+          <p>3D Model generated successfully! Click the link below to view:</p>
+          <a href="${data.modelUrl}" target="_blank">View 3D Model</a>
+        `;
+          } catch (error) {
+            loader.style.display = "none";
+            result.innerHTML = `<p style="color: red;">${error.message}</p>`;
+          }
+        });
+    </script>
+  </body>
+</html>
