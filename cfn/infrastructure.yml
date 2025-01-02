@@ -36,6 +36,8 @@ Resources:
             Principal:
               Service: lambda.amazonaws.com
             Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
       Policies:
         - PolicyName: LambdaS3AccessPolicy
           PolicyDocument:
@@ -46,42 +48,7 @@ Resources:
                   - s3:PutObject
                   - s3:GetObject
                 Resource:
-                  - !Sub "arn:aws:s3:::${LambdaCodeBucket}/${LambdaCodeKey}"
-                  - !Sub "arn:aws:s3:::creationism-image-storage/*"
-        - PolicyName: LambdaCloudWatchLogsPolicy
-          PolicyDocument:
-            Version: "2012-10-17"
-            Statement:
-              - Effect: Allow
-                Action:
-                  - logs:CreateLogGroup
-                  - logs:CreateLogStream
-                  - logs:PutLogEvents
-                Resource:
-                  - !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/*"
-
-  # IAM Role for API Gateway Logging
-  ApiGatewayLoggingRole:
-    Type: AWS::IAM::Role
-    Properties:
-      AssumeRolePolicyDocument:
-        Version: "2012-10-17"
-        Statement:
-          - Effect: Allow
-            Principal:
-              Service: apigateway.amazonaws.com
-            Action: sts:AssumeRole
-      Policies:
-        - PolicyName: ApiGatewayCloudWatchLogsPolicy
-          PolicyDocument:
-            Version: "2012-10-17"
-            Statement:
-              - Effect: Allow
-                Action:
-                  - logs:CreateLogGroup
-                  - logs:CreateLogStream
-                  - logs:PutLogEvents
-                Resource: "arn:aws:logs:*:*:*"
+                  - !Sub "arn:aws:s3:::${ImageStorageBucket}/*"
 
   # Lambda Function
   StableDiffusionFunction:
@@ -96,14 +63,26 @@ Resources:
         S3Key: !Ref LambdaCodeKey
       Environment:
         Variables:
-          BUCKET_NAME: creationism-image-storage
+          BUCKET_NAME: !Ref ImageStorageBucket
       Timeout: 60
+
+  # Lambda Permission for API Gateway
+  LambdaPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref StableDiffusionFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ApiGateway}/*"
 
   # API Gateway
   ApiGateway:
     Type: AWS::ApiGateway::RestApi
     Properties:
       Name: CreationismAPI
+      EndpointConfiguration:
+        Types:
+          - REGIONAL
 
   ApiGatewayResource:
     Type: AWS::ApiGateway::Resource
@@ -124,18 +103,12 @@ Resources:
         Type: AWS_PROXY
         Uri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${StableDiffusionFunction.Arn}/invocations"
 
-  # API Gateway Deployment
+  # Simplified API Gateway Deployment and Stage
   ApiDeployment:
     Type: AWS::ApiGateway::Deployment
+    DependsOn: ApiGatewayMethod
     Properties:
       RestApiId: !Ref ApiGateway
-    DependsOn: ApiGatewayMethod
-
-  ApiGatewayLogGroup:
-    Type: AWS::Logs::LogGroup
-    Properties:
-      LogGroupName: !Sub "/aws/apigateway/${ApiGateway.Name}"
-      RetentionInDays: 30 # Optional: Adjust as needed
 
   ApiGatewayStage:
     Type: AWS::ApiGateway::Stage
@@ -143,11 +116,12 @@ Resources:
       RestApiId: !Ref ApiGateway
       DeploymentId: !Ref ApiDeployment
       StageName: prod
-      MethodSettings:
-        - DataTraceEnabled: true
-          HttpMethod: "*"
-          ResourcePath: "/*"
-          LoggingLevel: INFO
       AccessLogSetting:
         DestinationArn: !GetAtt ApiGatewayLogGroup.Arn
-        Format: '{ "requestId":"$context.requestId","ip":"$context.identity.sourceIp","caller":"$context.identity.caller","user":"$context.identity.user","requestTime":"$context.requestTime","httpMethod":"$context.httpMethod","resourcePath":"$context.resourcePath","status":"$context.status","protocol":"$context.protocol","responseLength":"$context.responseLength"}'
+        Format: '{"requestId":"$context.requestId","ip":"$context.identity.sourceIp","requestTime":"$context.requestTime","httpMethod":"$context.httpMethod","resourcePath":"$context.resourcePath","status":"$context.status","responseLength":"$context.responseLength"}'
+
+  ApiGatewayLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/apigateway/${ApiGateway}"
+      RetentionInDays: 30
