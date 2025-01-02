@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Creationism - Text to Animated 3D</title>
+    <title>Creationism - Text to Image</title>
     <style>
       body {
         padding: 20px;
@@ -38,27 +38,34 @@
         display: none;
         margin-top: 20px;
       }
+      .generated-image {
+        max-width: 100%;
+        height: auto;
+        margin-top: 20px;
+        box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+      }
     </style>
   </head>
   <body>
     <h1>Creationism</h1>
-    <p>Enter your description to generate an animated 3D model:</p>
+    <p>Enter your description to generate an image:</p>
     <form id="textForm">
       <input
         type="text"
         id="userInput"
-        placeholder="Describe your model..."
+        placeholder="Describe what you want to generate..."
         required
       />
       <button type="submit">Generate</button>
     </form>
     <div id="loader">
-      <p>Processing... Please wait.</p>
+      <p>Generating your image... Please wait.</p>
     </div>
     <div id="result"></div>
 
     <script>
-      const apiUrl = "https://your-api-gateway-endpoint/prod/generate"; // Replace with your API Gateway URL
+      const apiUrl =
+        "https://yt82apwjl9.execute-api.us-west-2.amazonaws.com/prod/generate";
 
       document
         .getElementById("textForm")
@@ -69,11 +76,10 @@
           const loader = document.getElementById("loader");
           const result = document.getElementById("result");
 
-          result.innerHTML = ""; // Clear previous results
-          loader.style.display = "block"; // Show loader
+          result.innerHTML = "";
+          loader.style.display = "block";
 
           try {
-            // Send user input to the backend
             const response = await fetch(apiUrl, {
               method: "POST",
               headers: {
@@ -83,17 +89,21 @@
             });
 
             if (!response.ok) {
-              throw new Error("Something went wrong. Please try again.");
+              throw new Error("Failed to generate image. Please try again.");
             }
 
             const data = await response.json();
             loader.style.display = "none";
 
-            // Display the result
+            if (data.error) {
+              throw new Error(data.error);
+            }
+
+            // Display the generated image
             result.innerHTML = `
-          <p>3D Model generated successfully! Click the link below to view:</p>
-          <a href="${data.modelUrl}" target="_blank">View 3D Model</a>
-        `;
+                    <p>Image generated successfully!</p>
+                    <img src="${data.imageUrl}" alt="Generated Image" class="generated-image" />
+                `;
           } catch (error) {
             loader.style.display = "none";
             result.innerHTML = `<p style="color: red;">${error.message}</p>`;
