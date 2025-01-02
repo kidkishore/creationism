@@ -1,0 +1,87 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Creationism Project - Full AWS Setup
+
+Resources:
+  # S3 Bucket for Generated Images
+  ImageStorageBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: creationism-image-storage
+      LifecycleConfiguration:
+        Rules:
+          - Id: ExpireOldImages
+            Status: Enabled
+            ExpirationInDays: 7
+      AccessControl: Private
+
+  # IAM Role for Lambda
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: creationism_lambda_execution_role
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: LambdaS3AccessPolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:PutObject
+                  - s3:GetObject
+                Resource:
+                  - !Sub "arn:aws:s3:::creationism-image-storage/*"
+
+  # Lambda Function for Stable Diffusion
+  StableDiffusionFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: creationism_stable_diffusion
+      Handler: stable_diffusion.lambda_handler
+      Runtime: python3.9
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Code:
+        S3Bucket: my-lambda-code-bucket
+        S3Key: stable_diffusion.zip
+      Environment:
+        Variables:
+          BUCKET_NAME: creationism-image-storage
+      Timeout: 60
+
+  # API Gateway
+  ApiGateway:
+    Type: AWS::ApiGateway::RestApi
+    Properties:
+      Name: CreationismAPI
+
+  ApiGatewayResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      ParentId: !GetAtt ApiGateway.RootResourceId
+      PathPart: generate
+      RestApiId: !Ref ApiGateway
+
+  ApiGatewayMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref ApiGateway
+      ResourceId: !Ref ApiGatewayResource
+      HttpMethod: POST
+      AuthorizationType: NONE
+      Integration:
+        IntegrationHttpMethod: POST
+        Type: AWS_PROXY
+        Uri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${StableDiffusionFunction.Arn}/invocations"
+
+  ApiDeployment:
+    Type: AWS::ApiGateway::Deployment
+    Properties:
+      RestApiId: !Ref ApiGateway
+      StageName: prod
+    DependsOn: ApiGatewayMethod
