@@ -61,4 +61,4 @@ jobs:
             --parameter-overrides \
             LambdaCodeBucket=creationism-lambda-code \
             LambdaCodeKey=${{ env.TIMESTAMPED_ZIP }} \
-            HuggingFaceApiKey=${HUGGING_FACE_API_KEY}
+            HuggingFaceApiKey=${{ secrets.HUGGING_FACE_API_KEY }}
