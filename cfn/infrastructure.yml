@@ -134,12 +134,23 @@ Resources:
               - Effect: Allow
                 Action:
                   - dynamodb:UpdateItem
+                  - dynamodb:PutItem
+                  - dynamodb:GetItem
                 Resource: !GetAtt JobStatusTable.Arn
+
               - Effect: Allow
                 Action:
                   - s3:PutObject
                   - s3:GetObject
                 Resource: !Sub "arn:aws:s3:::${ImageStorageBucket}/*"
+
+              - Effect: Allow
+                Action:
+                  - sqs:ReceiveMessage
+                  - sqs:DeleteMessage
+                  - sqs:GetQueueAttributes
+                Resource: !GetAtt ReplicateQueue.Arn
+
               - Effect: Allow
                 Action:
                   - execute-api:ManageConnections
