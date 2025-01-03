@@ -5,14 +5,12 @@ import os
 import boto3
 
 def lambda_handler(event, context):
-    # Set CORS headers to allow all origins
     cors_headers = {
         'Access-Control-Allow-Origin': '*',
         'Access-Control-Allow-Headers': 'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token',
         'Access-Control-Allow-Methods': 'OPTIONS,POST'
     }
 
-    # Handle preflight OPTIONS request
     if event.get('httpMethod') == 'OPTIONS':
         return {
             'statusCode': 200,
@@ -21,7 +19,6 @@ def lambda_handler(event, context):
         }
 
     try:
-        # Parse the incoming request body
         body = json.loads(event.get('body', '{}'))
         prompt = body.get('text', '')
 
@@ -48,7 +45,6 @@ def lambda_handler(event, context):
             )
 
             if response.status_code == 200:
-                # Save image to S3
                 image_bytes = response.content
                 bucket_name = os.environ['BUCKET_NAME']
                 file_name = f"generated/{prompt[:30]}_{context.aws_request_id}.png"
@@ -60,7 +56,6 @@ def lambda_handler(event, context):
                     ContentType='image/png'
                 )
 
-                # Generate presigned URL
                 url = s3.generate_presigned_url(
                     'get_object',
                     Params={'Bucket': bucket_name, 'Key': file_name},
