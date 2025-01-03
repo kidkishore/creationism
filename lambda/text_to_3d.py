@@ -6,7 +6,7 @@ import boto3
 import requests
 
 def lambda_handler(event, context):
-    try:gi
+    try:
         body = json.loads(event.get('body', '{}'))
         prompt = body.get('text')
         if not prompt:
