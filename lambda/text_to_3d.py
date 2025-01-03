@@ -25,7 +25,7 @@ def lambda_handler(event, context):
 
         replicate_token = os.environ['REPLICATE_API_KEY']
         # Use Point-E version here:
-        model_version = "cjwbw/point-e:1a4da7adf0bc84cd786c1df41c02db3097d899f5c159f5fd5814a11117bdf02b"
+        model_version = "cjwbw/point-e:1a4da7ad"
 
         # Create prediction
         prediction_resp = requests.post(
