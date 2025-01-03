@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: "2010-09-09"
-Description: Creationism Project - Full AWS Setup
+Description: Creationism Project - Text-to-3D AWS Setup
 
 Parameters:
   LambdaCodeBucket:
@@ -12,9 +12,9 @@ Parameters:
     Type: String
     Description: Key of the Lambda function zip file in the S3 bucket.
 
-  HuggingFaceApiKey:
+  ReplicateApiKey:
     Type: String
-    Description: The Hugging Face API key for Stable Diffusion.
+    Description: The Replicate API key for text-to-3D.
 
 Resources:
   # DynamoDB Table for Job Status
@@ -33,14 +33,14 @@ Resources:
         AttributeName: expiry_time
         Enabled: true
 
-  # S3 Bucket for Image Storage
+  # S3 Bucket for Model/Files Storage
   ImageStorageBucket:
     Type: AWS::S3::Bucket
     Properties:
       BucketName: creationism-image-storage
       LifecycleConfiguration:
         Rules:
-          - Id: ExpireOldImages
+          - Id: ExpireOldFiles
             Status: Enabled
             ExpirationInDays: 7
       AccessControl: Private
@@ -80,14 +80,14 @@ Resources:
                 Action:
                   - lambda:InvokeFunction
                 Resource:
-                  - !Sub "arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${AWS::StackName}-StableDiffusionFunction"
+                  - !Sub "arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${AWS::StackName}-TextTo3DFunction"
 
   # Lambda Function
-  StableDiffusionFunction:
+  TextTo3DFunction:
     Type: AWS::Lambda::Function
     Properties:
-      FunctionName: !Sub "${AWS::StackName}-StableDiffusionFunction"
-      Handler: stable_diffusion.lambda_handler
+      FunctionName: !Sub "${AWS::StackName}-TextTo3DFunction"
+      Handler: text_to_3d.lambda_handler
       Runtime: python3.9
       Role: !GetAtt LambdaExecutionRole.Arn
       Code:
@@ -96,9 +96,9 @@ Resources:
       Environment:
         Variables:
           BUCKET_NAME: !Ref ImageStorageBucket
-          HUGGING_FACE_API_KEY: !Ref HuggingFaceApiKey
+          REPLICATE_API_KEY: !Ref ReplicateApiKey
           TABLE_NAME: !Ref JobStatusTable
-      Timeout: 60
+      Timeout: 120 # Might need more time for 3D generation
 
   # API Gateway
   ApiGateway:
@@ -126,7 +126,7 @@ Resources:
       Integration:
         Type: AWS_PROXY
         IntegrationHttpMethod: POST
-        Uri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${StableDiffusionFunction.Arn}/invocations"
+        Uri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${TextTo3DFunction.Arn}/invocations"
         TimeoutInMillis: 29000
       MethodResponses:
         - StatusCode: 200
@@ -181,6 +181,6 @@ Resources:
     Type: AWS::Lambda::Permission
     Properties:
       Action: lambda:InvokeFunction
-      FunctionName: !Ref StableDiffusionFunction
+      FunctionName: !Ref TextTo3DFunction
       Principal: apigateway.amazonaws.com
       SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ApiGateway}/*/*/*"

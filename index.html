@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Creationism - Text to Image</title>
+    <title>Creationism - Text to 3D</title>
     <style>
       body {
         padding: 20px;
@@ -31,52 +31,107 @@
       button:hover {
         background-color: #0056b3;
       }
-      #result {
-        margin-top: 20px;
-      }
       #loader {
         display: none;
         margin-top: 20px;
       }
-      .generated-image {
-        max-width: 100%;
-        height: auto;
+      #result {
         margin-top: 20px;
-        box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+      }
+      #threeCanvas {
+        display: inline-block;
+        width: 800px;
+        height: 600px;
+        margin-top: 20px;
+        background: #ddd;
       }
     </style>
   </head>
   <body>
-    <h1>Creationism</h1>
-    <p>Enter your description to generate an image:</p>
+    <h1>Creationism - Text to 3D</h1>
+    <p>Enter your description to generate a 3D model:</p>
     <form id="textForm">
       <input
         type="text"
         id="userInput"
-        placeholder="Describe what you want to generate..."
+        placeholder="Describe your 3D model..."
         required
       />
       <button type="submit">Generate</button>
     </form>
     <div id="loader">
-      <p>Generating your image... Please wait.</p>
+      <p>Generating your 3D model... Please wait.</p>
     </div>
     <div id="result"></div>
+    <canvas id="threeCanvas"></canvas>
+
+    <!-- Include three.js and OBJLoader (for .obj) or GLTFLoader if .glb -->
+    <script src="https://cdn.jsdelivr.net/npm/three@0.146.0/build/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.146.0/examples/jsm/loaders/OBJLoader.js"></script>
 
     <script>
+      // Replace with your actual API Gateway URL
       const apiUrl =
-        "https://yt82apwjl9.execute-api.us-west-2.amazonaws.com/prod/generate";
+        "https://<YOUR_API_ID>.execute-api.<YOUR_REGION>.amazonaws.com/prod/generate";
 
+      // Three.js setup
+      const scene = new THREE.Scene();
+      const camera = new THREE.PerspectiveCamera(
+        75,
+        800 / 600, // match canvas width/height
+        0.1,
+        1000
+      );
+      const renderer = new THREE.WebGLRenderer({
+        canvas: document.getElementById("threeCanvas"),
+      });
+      renderer.setSize(800, 600);
+
+      // Basic light
+      const light = new THREE.DirectionalLight(0xffffff, 1);
+      light.position.set(0, 1, 1).normalize();
+      scene.add(light);
+
+      camera.position.z = 5;
+
+      function animate() {
+        requestAnimationFrame(animate);
+        renderer.render(scene, camera);
+      }
+      animate(); // start render loop
+
+      // Function to load a 3D model given a URL (assuming .obj in this example)
+      function load3DModel(url) {
+        const loader = new THREE.OBJLoader();
+        loader.load(
+          url,
+          (obj) => {
+            scene.add(obj);
+          },
+          undefined,
+          (error) => {
+            console.error("Error loading 3D model:", error);
+          }
+        );
+      }
+
+      // Handle form submission
       document
         .getElementById("textForm")
         .addEventListener("submit", async (e) => {
           e.preventDefault();
-
           const userInput = document.getElementById("userInput").value;
           const loader = document.getElementById("loader");
           const result = document.getElementById("result");
 
+          // Clear old results/3D object
           result.innerHTML = "";
+          // remove old object from scene if needed
+          while (scene.children.length > 1) {
+            // keep the first child: the light
+            scene.remove(scene.children[1]);
+          }
+
           loader.style.display = "block";
 
           try {
@@ -89,7 +144,7 @@
             });
 
             if (!response.ok) {
-              throw new Error("Failed to generate image. Please try again.");
+              throw new Error("Failed to generate 3D model. Please try again.");
             }
 
             const data = await response.json();
@@ -99,11 +154,13 @@
               throw new Error(data.error);
             }
 
-            // Display the generated image
-            result.innerHTML = `
-                    <p>Image generated successfully!</p>
-                    <img src="${data.imageUrl}" alt="Generated Image" class="generated-image" />
-                `;
+            // The Lambda returns modelUrl if successful
+            if (data.modelUrl) {
+              result.innerHTML = `<p>3D model generated successfully! Loading...</p>`;
+              load3DModel(data.modelUrl);
+            } else {
+              result.innerHTML = `<p style="color: red;">No model URL returned.</p>`;
+            }
           } catch (error) {
             loader.style.display = "none";
             result.innerHTML = `<p style="color: red;">${error.message}</p>`;

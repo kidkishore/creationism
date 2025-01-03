@@ -34,15 +34,16 @@ jobs:
           mkdir -p build
           python3 -m venv build/venv
           source build/venv/bin/activate
+          # Install dependencies needed by your text_to_3d.py
           pip install requests boto3
           deactivate
-          cp lambda/stable_diffusion.py build/
+          cp lambda/text_to_3d.py build/
           cp -r build/venv/lib/python3.*/site-packages/* build/
           cd build
-          zip -r stable_diffusion.zip ./*
+          zip -r text_to_3d.zip ./*
           TIMESTAMP=$(date +%s)
-          export TIMESTAMPED_ZIP="stable_diffusion_${TIMESTAMP}.zip"
-          mv stable_diffusion.zip "$TIMESTAMPED_ZIP"
+          export TIMESTAMPED_ZIP="text_to_3d_${TIMESTAMP}.zip"
+          mv text_to_3d.zip "$TIMESTAMPED_ZIP"
           cd ..
           echo "TIMESTAMPED_ZIP=$TIMESTAMPED_ZIP" >> $GITHUB_ENV
 
@@ -61,4 +62,4 @@ jobs:
             --parameter-overrides \
             LambdaCodeBucket=creationism-lambda-code \
             LambdaCodeKey=${{ env.TIMESTAMPED_ZIP }} \
-            HuggingFaceApiKey=${{ secrets.HUGGING_FACE_API_KEY }}
+            ReplicateApiKey=${{ secrets.REPLICATE_API_KEY }}
