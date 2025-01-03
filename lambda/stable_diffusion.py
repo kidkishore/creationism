@@ -3,102 +3,167 @@ import requests
 import json
 import os
 import boto3
+import uuid
+from datetime import datetime, timedelta
 
 def lambda_handler(event, context):
-    cors_headers = {
-        'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Headers': 'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token',
-        'Access-Control-Allow-Methods': 'OPTIONS,POST'
-    }
+    # Handle status check requests
+    if event.get('queryStringParameters') and event.get('queryStringParameters').get('jobId'):
+        return check_status(event)
 
-    if event.get('httpMethod') == 'OPTIONS':
-        return {
-            'statusCode': 200,
-            'headers': cors_headers,
-            'body': json.dumps({'message': 'OK'})
-        }
-
+    # Handle image generation requests
     try:
         body = json.loads(event.get('body', '{}'))
         prompt = body.get('text', '')
 
         if not prompt:
-            return {
-                'statusCode': 400,
-                'headers': cors_headers,
-                'body': json.dumps({'error': 'No text prompt provided'})
-            }
+            return create_response(400, {'error': 'No text prompt provided'})
 
+        # Get or create job ID
+        job_id = body.get('jobId', str(uuid.uuid4()))
+        is_retry = 'jobId' in body
+        
+        if not is_retry:
+            # Store initial job status
+            dynamodb = boto3.resource('dynamodb')
+            table = dynamodb.Table(os.environ['TABLE_NAME'])
+            expiry_time = int((datetime.now() + timedelta(days=1)).timestamp())
+            table.put_item(Item={
+                'job_id': job_id,
+                'status': 'PROCESSING',
+                'prompt': prompt,
+                'created_at': int(time.time()),
+                'expiry_time': expiry_time
+            })
+
+        # Try to generate image
+        success = generate_image(prompt, job_id)
+        
+        if not success and not is_retry:
+            # Schedule a retry by invoking this lambda again
+            lambda_client = boto3.client('lambda')
+            lambda_client.invoke(
+                FunctionName=context.function_name,
+                InvocationType='Event',  # async
+                Payload=json.dumps({
+                    'body': json.dumps({
+                        'text': prompt,
+                        'jobId': job_id
+                    })
+                })
+            )
+
+        return create_response(200, {
+            'message': 'Image generation started',
+            'jobId': job_id
+        })
+
+    except Exception as e:
+        print(f"Error: {str(e)}")
+        return create_response(500, {'error': str(e)})
+
+def check_status(event):
+    try:
+        job_id = event['queryStringParameters']['jobId']
+        dynamodb = boto3.resource('dynamodb')
+        table = dynamodb.Table(os.environ['TABLE_NAME'])
+        
+        response = table.get_item(Key={'job_id': job_id})
+        item = response.get('Item', {})
+        
+        if not item:
+            return create_response(404, {'error': 'Job not found'})
+            
+        return create_response(200, {
+            'status': item.get('status'),
+            'imageUrl': item.get('image_url'),
+            'error': item.get('error')
+        })
+        
+    except Exception as e:
+        return create_response(500, {'error': str(e)})
+
+def generate_image(prompt, job_id):
+    try:
         api_url = "https://api-inference.huggingface.co/models/stabilityai/stable-diffusion-2-1"
         headers = {
             "Authorization": f"Bearer {os.environ.get('HUGGING_FACE_API_KEY')}"
         }
 
-        max_retries = 5
-        retry_delay = 30  # seconds
+        response = requests.post(
+            api_url,
+            headers=headers,
+            json={"inputs": prompt}
+        )
 
-        for attempt in range(max_retries):
-            response = requests.post(
-                api_url,
-                headers=headers,
-                json={"inputs": prompt}
+        dynamodb = boto3.resource('dynamodb')
+        table = dynamodb.Table(os.environ['TABLE_NAME'])
+
+        if response.status_code == 200:
+            # Save image to S3
+            image_bytes = response.content
+            bucket_name = os.environ['BUCKET_NAME']
+            file_name = f"generated/{prompt[:30]}_{job_id}.png"
+            
+            s3 = boto3.client('s3')
+            s3.put_object(
+                Bucket=bucket_name,
+                Key=file_name,
+                Body=image_bytes,
+                ContentType='image/png'
             )
 
-            if response.status_code == 200:
-                image_bytes = response.content
-                bucket_name = os.environ['BUCKET_NAME']
-                file_name = f"generated/{prompt[:30]}_{context.aws_request_id}.png"
-                s3 = boto3.client('s3')
-                s3.put_object(
-                    Bucket=bucket_name,
-                    Key=file_name,
-                    Body=image_bytes,
-                    ContentType='image/png'
-                )
+            url = s3.generate_presigned_url(
+                'get_object',
+                Params={'Bucket': bucket_name, 'Key': file_name},
+                ExpiresIn=3600
+            )
 
-                url = s3.generate_presigned_url(
-                    'get_object',
-                    Params={'Bucket': bucket_name, 'Key': file_name},
-                    ExpiresIn=3600
-                )
-
-                return {
-                    'statusCode': 200,
-                    'headers': cors_headers,
-                    'body': json.dumps({
-                        'message': 'Image generated successfully',
-                        'imageUrl': url
-                    })
+            # Update job status
+            table.update_item(
+                Key={'job_id': job_id},
+                UpdateExpression='SET #status = :s, image_url = :u',
+                ExpressionAttributeNames={'#status': 'status'},
+                ExpressionAttributeValues={
+                    ':s': 'COMPLETED',
+                    ':u': url
                 }
+            )
+            return True
 
-            elif response.status_code == 503:
-                error_data = response.json()
-                estimated_time = error_data.get("estimated_time", retry_delay)
-                print(f"Model loading, retrying in {estimated_time} seconds...")
-                time.sleep(estimated_time)
+        elif response.status_code == 503:
+            # Model is loading, update status for retry
+            table.update_item(
+                Key={'job_id': job_id},
+                UpdateExpression='SET #status = :s',
+                ExpressionAttributeNames={'#status': 'status'},
+                ExpressionAttributeValues={':s': 'QUEUED'}
+            )
+            return False
 
-            else:
-                print(f"Error response from Hugging Face: {response.status_code} - {response.text}")
-                return {
-                    'statusCode': 500,
-                    'headers': cors_headers,
-                    'body': json.dumps({
-                        'error': 'Failed to generate image',
-                        'details': response.text
-                    })
-                }
-
-        print("Max retries exceeded")
-        return {
-            'statusCode': 503,
-            'headers': cors_headers,
-            'body': json.dumps({'error': 'Model loading timed out after retries'})
-        }
+        else:
+            raise Exception(f"Failed to generate image: {response.text}")
 
     except Exception as e:
-        print(f"Unexpected error: {str(e)}")
-        return {
-            'statusCode': 500,
-            'headers': cors_headers,
-            'body': json.dumps({'error': str(e)})
-        }
+        print(f"Error generating image: {str(e)}")
+        table.update_item(
+            Key={'job_id': job_id},
+            UpdateExpression='SET #status = :s, error = :e',
+            ExpressionAttributeNames={'#status': 'status'},
+            ExpressionAttributeValues={
+                ':s': 'FAILED',
+                ':e': str(e)
+            }
+        )
+        return False
+
+def create_response(status_code, body):
+    return {
+        'statusCode': status_code,
+        'headers': {
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Headers': 'Content-Type,X-Amz-Date,Authorization,X-Api-Key',
+            'Access-Control-Allow-Methods': 'OPTIONS,POST,GET'
+        },
+        'body': json.dumps(body)
+    }
