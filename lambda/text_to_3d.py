@@ -6,7 +6,7 @@ import boto3
 import requests
 
 def lambda_handler(event, context):
-    try:
+    try:gi
         body = json.loads(event.get('body', '{}'))
         prompt = body.get('text')
         if not prompt:
@@ -109,9 +109,15 @@ def lambda_handler(event, context):
 def handle_failure(table, job_id, msg):
     table.update_item(
         Key={'job_id': job_id},
-        UpdateExpression='SET #s = :s, error = :e',
-        ExpressionAttributeNames={'#s': 'status'},
-        ExpressionAttributeValues={':s': 'FAILED', ':e': msg}
+        UpdateExpression='SET #s = :s, #e = :e',
+        ExpressionAttributeNames={
+            '#s': 'status',
+            '#e': 'error'  # map '#e' to the actual attribute name 'error'
+        },
+        ExpressionAttributeValues={
+            ':s': 'FAILED',
+            ':e': msg
+        }
     )
     return create_response(500, {'error': msg})
 
