@@ -89,6 +89,9 @@ Resources:
       EndpointConfiguration:
         Types:
           - REGIONAL
+      BinaryMediaTypes:
+        - image/*
+        - "*/*"
 
   ApiGatewayResource:
     Type: AWS::ApiGateway::Resource
