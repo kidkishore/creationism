@@ -17,6 +17,22 @@ Parameters:
     Description: The Hugging Face API key for Stable Diffusion.
 
 Resources:
+  # DynamoDB Table for Job Status
+  JobStatusTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: creationism-job-status
+      AttributeDefinitions:
+        - AttributeName: job_id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: job_id
+          KeyType: HASH
+      BillingMode: PAY_PER_REQUEST
+      TimeToLiveSpecification:
+        AttributeName: expiry_time
+        Enabled: true
+
   # S3 Bucket for Image Storage
   ImageStorageBucket:
     Type: AWS::S3::Bucket
@@ -43,7 +59,7 @@ Resources:
       ManagedPolicyArns:
         - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
       Policies:
-        - PolicyName: LambdaS3AccessPolicy
+        - PolicyName: LambdaS3AndDynamoDBAccessPolicy
           PolicyDocument:
             Version: "2012-10-17"
             Statement:
@@ -53,12 +69,24 @@ Resources:
                   - s3:GetObject
                 Resource:
                   - !Sub "arn:aws:s3:::${ImageStorageBucket}/*"
+              - Effect: Allow
+                Action:
+                  - dynamodb:PutItem
+                  - dynamodb:GetItem
+                  - dynamodb:UpdateItem
+                Resource:
+                  - !GetAtt JobStatusTable.Arn
+              - Effect: Allow
+                Action:
+                  - lambda:InvokeFunction
+                Resource:
+                  - !Sub "arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${AWS::StackName}-StableDiffusionFunction"
 
   # Lambda Function
   StableDiffusionFunction:
     Type: AWS::Lambda::Function
     Properties:
-      FunctionName: creationism_stable_diffusion
+      FunctionName: !Sub "${AWS::StackName}-StableDiffusionFunction"
       Handler: stable_diffusion.lambda_handler
       Runtime: python3.9
       Role: !GetAtt LambdaExecutionRole.Arn
@@ -72,15 +100,6 @@ Resources:
           TABLE_NAME: !Ref JobStatusTable
       Timeout: 60
 
-  # Lambda Permission for API Gateway
-  LambdaPermission:
-    Type: AWS::Lambda::Permission
-    Properties:
-      Action: lambda:InvokeFunction
-      FunctionName: !Ref StableDiffusionFunction
-      Principal: apigateway.amazonaws.com
-      SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ApiGateway}/*/*/*"
-
   # API Gateway
   ApiGateway:
     Type: AWS::ApiGateway::RestApi
@@ -89,9 +108,6 @@ Resources:
       EndpointConfiguration:
         Types:
           - REGIONAL
-      BinaryMediaTypes:
-        - image/*
-        - "*/*"
 
   ApiGatewayResource:
     Type: AWS::ApiGateway::Resource
@@ -111,6 +127,7 @@ Resources:
         Type: AWS_PROXY
         IntegrationHttpMethod: POST
         Uri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${StableDiffusionFunction.Arn}/invocations"
+        TimeoutInMillis: 29000
       MethodResponses:
         - StatusCode: 200
           ResponseParameters:
@@ -158,32 +175,12 @@ Resources:
       RestApiId: !Ref ApiGateway
       DeploymentId: !Ref ApiDeployment
       StageName: prod
-      AccessLogSetting:
-        DestinationArn: !GetAtt ApiGatewayLogGroup.Arn
-        Format: '{"requestId":"$context.requestId","ip":"$context.identity.sourceIp","requestTime":"$context.requestTime","httpMethod":"$context.httpMethod","resourcePath":"$context.resourcePath","status":"$context.status","responseLength":"$context.responseLength"}'
 
-  ApiGatewayLogGroup:
-    Type: AWS::Logs::LogGroup
+  # Lambda Permission for API Gateway
+  LambdaPermission:
+    Type: AWS::Lambda::Permission
     Properties:
-      LogGroupName: !Sub "/aws/apigateway/${ApiGateway}"
-      RetentionInDays: 30
-
-  GatewayResponses:
-    Type: AWS::ApiGateway::GatewayResponse
-    Properties:
-      RestApiId: !Ref ApiGateway
-      ResponseType: DEFAULT_4XX
-      ResponseParameters:
-        gatewayresponse.header.Access-Control-Allow-Origin: "'*'"
-        gatewayresponse.header.Access-Control-Allow-Headers: "'Content-Type'"
-        gatewayresponse.header.Access-Control-Allow-Methods: "'OPTIONS,POST'"
-
-  Gateway5XXResponse:
-    Type: AWS::ApiGateway::GatewayResponse
-    Properties:
-      RestApiId: !Ref ApiGateway
-      ResponseType: DEFAULT_5XX
-      ResponseParameters:
-        gatewayresponse.header.Access-Control-Allow-Origin: "'*'"
-        gatewayresponse.header.Access-Control-Allow-Headers: "'Content-Type'"
-        gatewayresponse.header.Access-Control-Allow-Methods: "'OPTIONS,POST'"
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref StableDiffusionFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ApiGateway}/*/*/*"
