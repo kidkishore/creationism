@@ -108,6 +108,12 @@ Resources:
         IntegrationHttpMethod: POST
         Type: AWS_PROXY
         Uri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${StableDiffusionFunction.Arn}/invocations"
+        IntegrationResponses:
+          - StatusCode: 200
+            ResponseParameters:
+              method.response.header.Access-Control-Allow-Origin: "'*'"
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type'"
+              method.response.header.Access-Control-Allow-Methods: "'OPTIONS,POST'"
       MethodResponses:
         - StatusCode: 200
           ResponseParameters:
@@ -127,7 +133,7 @@ Resources:
         IntegrationResponses:
           - StatusCode: 200
             ResponseParameters:
-              method.response.header.Access-Control-Allow-Origin: "'https://kidkishore.github.io/creationism'"
+              method.response.header.Access-Control-Allow-Origin: "'*'" # Changed to allow all origins
               method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
               method.response.header.Access-Control-Allow-Methods: "'OPTIONS,POST'"
             ResponseTemplates:
@@ -172,7 +178,7 @@ Resources:
       RestApiId: !Ref ApiGateway
       ResponseType: DEFAULT_4XX
       ResponseParameters:
-        gatewayresponse.header.Access-Control-Allow-Origin: "'https://kidkishore.github.io/creationism'"
+        gatewayresponse.header.Access-Control-Allow-Origin: "'*'"
         gatewayresponse.header.Access-Control-Allow-Headers: "'Content-Type'"
         gatewayresponse.header.Access-Control-Allow-Methods: "'OPTIONS,POST'"
 
@@ -182,6 +188,6 @@ Resources:
       RestApiId: !Ref ApiGateway
       ResponseType: DEFAULT_5XX
       ResponseParameters:
-        gatewayresponse.header.Access-Control-Allow-Origin: "'https://kidkishore.github.io/creationism'"
+        gatewayresponse.header.Access-Control-Allow-Origin: "'*'"
         gatewayresponse.header.Access-Control-Allow-Headers: "'Content-Type'"
         gatewayresponse.header.Access-Control-Allow-Methods: "'OPTIONS,POST'"
