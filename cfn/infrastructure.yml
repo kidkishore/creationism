@@ -1,23 +1,26 @@
 AWSTemplateFormatVersion: "2010-09-09"
-Description: Creationism Project - Text-to-3D AWS Setup
+Description: Creationism Project - WebSocket + Async Text-to-3D
 
 Parameters:
   LambdaCodeBucket:
     Type: String
-    Description: S3 bucket containing the Lambda function code.
-    AllowedPattern: "^[a-z0-9.-]+$"
-    ConstraintDescription: "Bucket name must consist of lowercase letters, numbers, dots, and hyphens."
+    Description: S3 bucket containing the Lambda zip.
 
-  LambdaCodeKey:
+  WebsocketHandlerKey:
     Type: String
-    Description: Key of the Lambda function zip file in the S3 bucket.
+    Description: Key for the WebSocket handler Lambda zip.
+
+  WorkerHandlerKey:
+    Type: String
+    Description: Key for the worker Lambda zip.
 
   ReplicateApiKey:
     Type: String
-    Description: The Replicate API key for text-to-3D.
+    Description: The Replicate API key.
+    NoEcho: true
 
 Resources:
-  # DynamoDB Table for Job Status
+  # DynamoDB Table (job status)
   JobStatusTable:
     Type: AWS::DynamoDB::Table
     Properties:
@@ -29,24 +32,35 @@ Resources:
         - AttributeName: job_id
           KeyType: HASH
       BillingMode: PAY_PER_REQUEST
-      TimeToLiveSpecification:
-        AttributeName: expiry_time
-        Enabled: true
 
-  # S3 Bucket for Model/Files Storage
+  # DynamoDB Table (WebSocket connections)
+  ConnectionsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: creationism-connections
+      AttributeDefinitions:
+        - AttributeName: connectionId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: connectionId
+          KeyType: HASH
+      BillingMode: PAY_PER_REQUEST
+
+  # S3 Bucket for models
   ImageStorageBucket:
     Type: AWS::S3::Bucket
     Properties:
       BucketName: creationism-image-storage
-      LifecycleConfiguration:
-        Rules:
-          - Id: ExpireOldFiles
-            Status: Enabled
-            ExpirationInDays: 7
       AccessControl: Private
 
-  # IAM Role for Lambda
-  LambdaExecutionRole:
+  # SQS Queue
+  ReplicateQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: creationism-replicate-queue
+
+  # IAM Role for WebSocket Handler
+  WebSocketLambdaRole:
     Type: AWS::IAM::Role
     Properties:
       AssumeRolePolicyDocument:
@@ -59,128 +73,181 @@ Resources:
       ManagedPolicyArns:
         - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
       Policies:
-        - PolicyName: LambdaS3AndDynamoDBAccessPolicy
+        - PolicyName: WebSocketPolicy
           PolicyDocument:
             Version: "2012-10-17"
             Statement:
               - Effect: Allow
                 Action:
-                  - s3:PutObject
-                  - s3:GetObject
-                Resource:
-                  - !Sub "arn:aws:s3:::${ImageStorageBucket}/*"
-              - Effect: Allow
-                Action:
                   - dynamodb:PutItem
+                  - dynamodb:DeleteItem
                   - dynamodb:GetItem
                   - dynamodb:UpdateItem
                 Resource:
                   - !GetAtt JobStatusTable.Arn
+                  - !GetAtt ConnectionsTable.Arn
               - Effect: Allow
                 Action:
-                  - lambda:InvokeFunction
-                Resource:
-                  - !Sub "arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${AWS::StackName}-TextTo3DFunction"
+                  - sqs:SendMessage
+                Resource: !GetAtt ReplicateQueue.Arn
+              - Effect: Allow
+                Action:
+                  - execute-api:ManageConnections
+                Resource: "*"
 
-  # Lambda Function
-  TextTo3DFunction:
+  # WebSocket Handler Lambda
+  WebSocketHandlerFunction:
     Type: AWS::Lambda::Function
     Properties:
-      FunctionName: !Sub "${AWS::StackName}-TextTo3DFunction"
-      Handler: text_to_3d.lambda_handler
+      FunctionName: !Sub "${AWS::StackName}-WebSocketHandler"
+      Handler: websocket_handler.lambda_handler
       Runtime: python3.9
-      Role: !GetAtt LambdaExecutionRole.Arn
+      Role: !GetAtt WebSocketLambdaRole.Arn
       Code:
         S3Bucket: !Ref LambdaCodeBucket
-        S3Key: !Ref LambdaCodeKey
+        S3Key: !Ref WebsocketHandlerKey
+      Timeout: 900 # up to 15 minutes if needed
       Environment:
         Variables:
-          BUCKET_NAME: !Ref ImageStorageBucket
+          CONNECTIONS_TABLE: !Ref ConnectionsTable
+          JOB_TABLE: !Ref JobStatusTable
+          REPLICATE_QUEUE_URL: !GetAtt ReplicateQueue.QueueUrl
+
+  # IAM Role for Worker Lambda
+  WorkerLambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: WorkerPolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - dynamodb:UpdateItem
+                Resource: !GetAtt JobStatusTable.Arn
+              - Effect: Allow
+                Action:
+                  - s3:PutObject
+                  - s3:GetObject
+                Resource: !Sub "arn:aws:s3:::${ImageStorageBucket}/*"
+              - Effect: Allow
+                Action:
+                  - execute-api:ManageConnections
+                Resource: "*"
+
+  # Worker Lambda
+  ReplicateWorkerFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub "${AWS::StackName}-ReplicateWorker"
+      Handler: replicate_worker.lambda_handler
+      Runtime: python3.9
+      Role: !GetAtt WorkerLambdaRole.Arn
+      Code:
+        S3Bucket: !Ref LambdaCodeBucket
+        S3Key: !Ref WorkerHandlerKey
+      Timeout: 900
+      Environment:
+        Variables:
           REPLICATE_API_KEY: !Ref ReplicateApiKey
-          TABLE_NAME: !Ref JobStatusTable
-      Timeout: 120 # Might need more time for 3D generation
+          JOB_TABLE: !Ref JobStatusTable
+          BUCKET_NAME: !Ref ImageStorageBucket
 
-  # API Gateway
-  ApiGateway:
-    Type: AWS::ApiGateway::RestApi
+  # Event Source Mapping from SQS to Worker Lambda
+  WorkerEventSourceMapping:
+    Type: AWS::Lambda::EventSourceMapping
     Properties:
-      Name: CreationismAPI
-      EndpointConfiguration:
-        Types:
-          - REGIONAL
+      EventSourceArn: !GetAtt ReplicateQueue.Arn
+      FunctionName: !Ref ReplicateWorkerFunction
+      BatchSize: 1
 
-  ApiGatewayResource:
-    Type: AWS::ApiGateway::Resource
+  # WebSocket API
+  WebSocketApi:
+    Type: AWS::ApiGatewayV2::Api
     Properties:
-      ParentId: !GetAtt ApiGateway.RootResourceId
-      PathPart: generate
-      RestApiId: !Ref ApiGateway
+      Name: !Sub "${AWS::StackName}-WebSocketAPI"
+      ProtocolType: WEBSOCKET
+      RouteSelectionExpression: "$request.body.action"
 
-  ApiGatewayMethod:
-    Type: AWS::ApiGateway::Method
+  # $connect route
+  ConnectRoute:
+    Type: AWS::ApiGatewayV2::Route
     Properties:
-      RestApiId: !Ref ApiGateway
-      ResourceId: !Ref ApiGatewayResource
-      HttpMethod: POST
+      ApiId: !Ref WebSocketApi
+      RouteKey: "$connect"
       AuthorizationType: NONE
-      Integration:
-        Type: AWS_PROXY
-        IntegrationHttpMethod: POST
-        Uri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${TextTo3DFunction.Arn}/invocations"
-        TimeoutInMillis: 29000
-      MethodResponses:
-        - StatusCode: 200
-          ResponseParameters:
-            method.response.header.Access-Control-Allow-Origin: true
-            method.response.header.Access-Control-Allow-Headers: true
-            method.response.header.Access-Control-Allow-Methods: true
+      Target: !Sub "integrations/${ConnectIntegration.Ref}"
 
-  ApiGatewayOptionsMethod:
-    Type: AWS::ApiGateway::Method
+  ConnectIntegration:
+    Type: AWS::ApiGatewayV2::Integration
     Properties:
-      RestApiId: !Ref ApiGateway
-      ResourceId: !Ref ApiGatewayResource
-      HttpMethod: OPTIONS
+      ApiId: !Ref WebSocketApi
+      IntegrationType: AWS_PROXY
+      IntegrationUri: !GetAtt WebSocketHandlerFunction.Arn
+      IntegrationMethod: POST
+
+  # $disconnect route
+  DisconnectRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref WebSocketApi
+      RouteKey: "$disconnect"
       AuthorizationType: NONE
-      Integration:
-        Type: MOCK
-        IntegrationResponses:
-          - StatusCode: 200
-            ResponseParameters:
-              method.response.header.Access-Control-Allow-Origin: "'*'"
-              method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
-              method.response.header.Access-Control-Allow-Methods: "'OPTIONS,POST'"
-        RequestTemplates:
-          application/json: '{"statusCode": 200}'
-      MethodResponses:
-        - StatusCode: 200
-          ResponseParameters:
-            method.response.header.Access-Control-Allow-Origin: true
-            method.response.header.Access-Control-Allow-Headers: true
-            method.response.header.Access-Control-Allow-Methods: true
+      Target: !Sub "integrations/${DisconnectIntegration.Ref}"
 
-  # API Gateway Deployment and Stage
-  ApiDeployment:
-    Type: AWS::ApiGateway::Deployment
-    DependsOn:
-      - ApiGatewayMethod
-      - ApiGatewayOptionsMethod
+  DisconnectIntegration:
+    Type: AWS::ApiGatewayV2::Integration
     Properties:
-      RestApiId: !Ref ApiGateway
-      Description: !Sub "Deployment created at ${AWS::StackName}-${AWS::Region}-${AWS::AccountId}"
+      ApiId: !Ref WebSocketApi
+      IntegrationType: AWS_PROXY
+      IntegrationUri: !GetAtt WebSocketHandlerFunction.Arn
+      IntegrationMethod: POST
 
-  ApiGatewayStage:
-    Type: AWS::ApiGateway::Stage
+  # generate route
+  GenerateRoute:
+    Type: AWS::ApiGatewayV2::Route
     Properties:
-      RestApiId: !Ref ApiGateway
-      DeploymentId: !Ref ApiDeployment
+      ApiId: !Ref WebSocketApi
+      RouteKey: "generate"
+      AuthorizationType: NONE
+      Target: !Sub "integrations/${GenerateIntegration.Ref}"
+
+  GenerateIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref WebSocketApi
+      IntegrationType: AWS_PROXY
+      IntegrationUri: !GetAtt WebSocketHandlerFunction.Arn
+      IntegrationMethod: POST
+
+  # Stage
+  WebSocketStage:
+    Type: AWS::ApiGatewayV2::Stage
+    Properties:
+      ApiId: !Ref WebSocketApi
       StageName: prod
+      AutoDeploy: true
 
-  # Lambda Permission for API Gateway
-  LambdaPermission:
+  # Permissions for Lambda to be invoked by WebSocket
+  WebSocketPermission:
     Type: AWS::Lambda::Permission
     Properties:
       Action: lambda:InvokeFunction
-      FunctionName: !Ref TextTo3DFunction
+      FunctionName: !GetAtt WebSocketHandlerFunction.Arn
       Principal: apigateway.amazonaws.com
-      SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ApiGateway}/*/*/*"
+      SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${WebSocketApi}/*"
+
+Outputs:
+  WebSocketEndpoint:
+    Description: "The wss:// endpoint for your WebSocket API"
+    Value: !Sub "wss://${WebSocketApi}.execute-api.${AWS::Region}.amazonaws.com/prod"

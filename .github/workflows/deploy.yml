@@ -10,11 +10,11 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # Checkout the repository
+      # Step 0: Checkout the repository
       - name: Checkout Repository
         uses: actions/checkout@v3
 
-      # Configure AWS credentials
+      # Step 1: Configure AWS Credentials
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v2
         with:
@@ -22,37 +22,66 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
 
-      # Step 1: Create S3 Bucket for Lambda Code
+      # Step 2: Ensure S3 Bucket exists (for Lambda zips)
       - name: Ensure S3 Bucket for Lambda Exists
         run: |
           aws s3api head-bucket --bucket creationism-lambda-code || \
-          aws s3api create-bucket --bucket creationism-lambda-code --region ${{ secrets.AWS_REGION }} --create-bucket-configuration LocationConstraint=${{ secrets.AWS_REGION }}
+          aws s3api create-bucket --bucket creationism-lambda-code --region ${{ secrets.AWS_REGION }} \
+            --create-bucket-configuration LocationConstraint=${{ secrets.AWS_REGION }}
 
-      # Step 2: Package Lambda Code with Dependencies
-      - name: Package Lambda Code
+      #################################################
+      # Package WebSocket Handler Lambda
+      #################################################
+      - name: Package WebSocket Handler
         run: |
-          mkdir -p build
-          python3 -m venv build/venv
-          source build/venv/bin/activate
-          # Install dependencies needed by your text_to_3d.py
+          mkdir -p build/websocket
+          python3 -m venv build/websocket/venv
+          source build/websocket/venv/bin/activate
           pip install requests boto3
           deactivate
-          cp lambda/text_to_3d.py build/
-          cp -r build/venv/lib/python3.*/site-packages/* build/
-          cd build
-          zip -r text_to_3d.zip ./*
+          cp lambda/websocket_handler.py build/websocket/
+          cp -r build/websocket/venv/lib/python3.*/site-packages/* build/websocket/
+
+          cd build/websocket
+          zip -r websocket_handler.zip ./*
           TIMESTAMP=$(date +%s)
-          export TIMESTAMPED_ZIP="text_to_3d_${TIMESTAMP}.zip"
-          mv text_to_3d.zip "$TIMESTAMPED_ZIP"
-          cd ..
-          echo "TIMESTAMPED_ZIP=$TIMESTAMPED_ZIP" >> $GITHUB_ENV
+          export WEBSOCKET_ZIP="websocket_handler_${TIMESTAMP}.zip"
+          mv websocket_handler.zip "$WEBSOCKET_ZIP"
+          cd ../..
+          echo "WEBSOCKET_ZIP=$WEBSOCKET_ZIP" >> $GITHUB_ENV
 
-      # Step 3: Upload Lambda Code to S3
-      - name: Upload Lambda Code
+      - name: Upload WebSocket Handler
         run: |
-          aws s3 cp build/${{ env.TIMESTAMPED_ZIP }} s3://creationism-lambda-code/${{ env.TIMESTAMPED_ZIP }}
+          aws s3 cp build/websocket/${{ env.WEBSOCKET_ZIP }} s3://creationism-lambda-code/${{ env.WEBSOCKET_ZIP }}
 
-      # Step 4: Deploy CloudFormation Stack
+      #################################################
+      # Package Replicate Worker Lambda
+      #################################################
+      - name: Package Replicate Worker
+        run: |
+          mkdir -p build/worker
+          python3 -m venv build/worker/venv
+          source build/worker/venv/bin/activate
+          pip install requests boto3
+          deactivate
+          cp lambda/replicate_worker.py build/worker/
+          cp -r build/worker/venv/lib/python3.*/site-packages/* build/worker/
+
+          cd build/worker
+          zip -r replicate_worker.zip ./*
+          TIMESTAMP=$(date +%s)
+          export WORKER_ZIP="replicate_worker_${TIMESTAMP}.zip"
+          mv replicate_worker.zip "$WORKER_ZIP"
+          cd ../..
+          echo "WORKER_ZIP=$WORKER_ZIP" >> $GITHUB_ENV
+
+      - name: Upload Replicate Worker
+        run: |
+          aws s3 cp build/worker/${{ env.WORKER_ZIP }} s3://creationism-lambda-code/${{ env.WORKER_ZIP }}
+
+      #################################################
+      # Deploy CloudFormation Stack
+      #################################################
       - name: Deploy CloudFormation Stack
         run: |
           aws cloudformation deploy \
@@ -60,6 +89,7 @@ jobs:
             --template-file cfn/infrastructure.yml \
             --capabilities CAPABILITY_NAMED_IAM \
             --parameter-overrides \
-            LambdaCodeBucket=creationism-lambda-code \
-            LambdaCodeKey=${{ env.TIMESTAMPED_ZIP }} \
-            ReplicateApiKey=${{ secrets.REPLICATE_API_KEY }}
+              LambdaCodeBucket=creationism-lambda-code \
+              WebsocketHandlerKey=${{ env.WEBSOCKET_ZIP }} \
+              WorkerHandlerKey=${{ env.WORKER_ZIP }} \
+              ReplicateApiKey=${{ secrets.REPLICATE_API_KEY }}
