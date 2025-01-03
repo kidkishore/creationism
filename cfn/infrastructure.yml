@@ -108,6 +108,18 @@ Resources:
         IntegrationHttpMethod: POST
         Type: AWS_PROXY
         Uri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${StableDiffusionFunction.Arn}/invocations"
+        IntegrationResponses:
+          - StatusCode: 200
+            ResponseParameters:
+              method.response.header.Access-Control-Allow-Origin: "'https://kidkishore.github.io'"
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+              method.response.header.Access-Control-Allow-Methods: "'OPTIONS,POST'"
+      MethodResponses:
+        - StatusCode: 200
+          ResponseParameters:
+            method.response.header.Access-Control-Allow-Origin: true
+            method.response.header.Access-Control-Allow-Headers: true
+            method.response.header.Access-Control-Allow-Methods: true
 
   ApiGatewayOptionsMethod:
     Type: AWS::ApiGateway::Method
@@ -118,16 +130,16 @@ Resources:
       AuthorizationType: NONE
       Integration:
         Type: MOCK
-        RequestTemplates:
-          application/json: '{"statusCode": 200}'
         IntegrationResponses:
           - StatusCode: 200
             ResponseParameters:
-              method.response.header.Access-Control-Allow-Origin: "'*'"
+              method.response.header.Access-Control-Allow-Origin: "'https://kidkishore.github.io'"
               method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
               method.response.header.Access-Control-Allow-Methods: "'OPTIONS,POST'"
             ResponseTemplates:
               application/json: ""
+        RequestTemplates:
+          application/json: '{"statusCode": 200}'
       MethodResponses:
         - StatusCode: 200
           ResponseParameters:

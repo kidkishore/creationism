@@ -5,6 +5,13 @@ import os
 import boto3
 
 def lambda_handler(event, context):
+    cors_headers = {
+        'Access-Control-Allow-Origin': 'https://kidkishore.github.io',
+        'Access-Control-Allow-Headers': 'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token',
+        'Access-Control-Allow-Methods': 'OPTIONS,POST'
+    }
+
+
     try:
         # Parse the incoming request body
         body = json.loads(event.get('body', '{}'))
@@ -13,11 +20,7 @@ def lambda_handler(event, context):
         if not prompt:
             return {
                 'statusCode': 400,
-                'headers': {
-                    'Access-Control-Allow-Origin': '*',
-                    'Access-Control-Allow-Headers': 'Content-Type',
-                    'Access-Control-Allow-Methods': 'POST'
-                },
+                'headers': cors_headers,
                 'body': json.dumps({'error': 'No text prompt provided'})
             }
 
@@ -58,11 +61,7 @@ def lambda_handler(event, context):
 
                 return {
                     'statusCode': 200,
-                    'headers': {
-                        'Access-Control-Allow-Origin': '*',
-                        'Access-Control-Allow-Headers': 'Content-Type',
-                        'Access-Control-Allow-Methods': 'POST'
-                    },
+                    'headers': cors_headers,
                     'body': json.dumps({
                         'message': 'Image generated successfully',
                         'imageUrl': url
@@ -78,31 +77,19 @@ def lambda_handler(event, context):
             else:
                 return {
                     'statusCode': 500,
-                    'headers': {
-                        'Access-Control-Allow-Origin': '*',
-                        'Access-Control-Allow-Headers': 'Content-Type',
-                        'Access-Control-Allow-Methods': 'POST'
-                    },
+                    'headers': cors_headers,
                     'body': json.dumps({'error': 'Failed to generate image', 'details': response.text})
                 }
 
         return {
             'statusCode': 503,
-            'headers': {
-                'Access-Control-Allow-Origin': '*',
-                'Access-Control-Allow-Headers': 'Content-Type',
-                'Access-Control-Allow-Methods': 'POST'
-            },
+            'headers': cors_headers,
             'body': json.dumps({'error': 'Model loading timed out after retries'})
         }
 
     except Exception as e:
         return {
             'statusCode': 500,
-            'headers': {
-                'Access-Control-Allow-Origin': '*',
-                'Access-Control-Allow-Headers': 'Content-Type',
-                'Access-Control-Allow-Methods': 'POST'
-            },
+            'headers': cors_headers,
             'body': json.dumps({'error': str(e)})
         }
