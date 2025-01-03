@@ -79,7 +79,7 @@ Resources:
       Action: lambda:InvokeFunction
       FunctionName: !Ref StableDiffusionFunction
       Principal: apigateway.amazonaws.com
-      SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ApiGateway}/*/POST/generate"
+      SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ApiGateway}/*/*/*"
 
   # API Gateway
   ApiGateway:
@@ -111,12 +111,6 @@ Resources:
         IntegrationHttpMethod: POST
         Type: AWS_PROXY
         Uri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${StableDiffusionFunction.Arn}/invocations"
-        IntegrationResponses:
-          - StatusCode: 200
-            ResponseParameters:
-              method.response.header.Access-Control-Allow-Origin: "'*'"
-              method.response.header.Access-Control-Allow-Headers: "'Content-Type'"
-              method.response.header.Access-Control-Allow-Methods: "'OPTIONS,POST'"
       MethodResponses:
         - StatusCode: 200
           ResponseParameters:
@@ -133,16 +127,17 @@ Resources:
       AuthorizationType: NONE
       Integration:
         Type: MOCK
+        PassthroughBehavior: WHEN_NO_MATCH
+        RequestTemplates:
+          application/json: '{"statusCode": 200}'
         IntegrationResponses:
           - StatusCode: 200
             ResponseParameters:
-              method.response.header.Access-Control-Allow-Origin: "'*'" # Changed to allow all origins
+              method.response.header.Access-Control-Allow-Origin: "'*'"
               method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
               method.response.header.Access-Control-Allow-Methods: "'OPTIONS,POST'"
             ResponseTemplates:
               application/json: ""
-        RequestTemplates:
-          application/json: '{"statusCode": 200}'
       MethodResponses:
         - StatusCode: 200
           ResponseParameters:
@@ -150,7 +145,7 @@ Resources:
             method.response.header.Access-Control-Allow-Headers: true
             method.response.header.Access-Control-Allow-Methods: true
 
-  # Simplified API Gateway Deployment and Stage
+  # API Gateway Deployment and Stage
   ApiDeployment:
     Type: AWS::ApiGateway::Deployment
     DependsOn:
@@ -158,6 +153,7 @@ Resources:
       - ApiGatewayOptionsMethod
     Properties:
       RestApiId: !Ref ApiGateway
+      Description: !Sub "Deployment created at ${AWS::StackName}-${AWS::Region}-${AWS::AccountId}"
 
   ApiGatewayStage:
     Type: AWS::ApiGateway::Stage
@@ -174,7 +170,7 @@ Resources:
     Properties:
       LogGroupName: !Sub "/aws/apigateway/${ApiGateway}"
       RetentionInDays: 30
-  # Add this to your CloudFormation template
+
   GatewayResponses:
     Type: AWS::ApiGateway::GatewayResponse
     Properties:

@@ -5,12 +5,20 @@ import os
 import boto3
 
 def lambda_handler(event, context):
+    # Set CORS headers to allow all origins
     cors_headers = {
-        'Access-Control-Allow-Origin': '*',  # Allow all origins
-        'Access-Control-Allow-Headers': 'Content-Type',
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Headers': 'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token',
         'Access-Control-Allow-Methods': 'OPTIONS,POST'
     }
 
+    # Handle preflight OPTIONS request
+    if event.get('httpMethod') == 'OPTIONS':
+        return {
+            'statusCode': 200,
+            'headers': cors_headers,
+            'body': json.dumps({'message': 'OK'})
+        }
 
     try:
         # Parse the incoming request body
@@ -75,12 +83,17 @@ def lambda_handler(event, context):
                 time.sleep(estimated_time)
 
             else:
+                print(f"Error response from Hugging Face: {response.status_code} - {response.text}")
                 return {
                     'statusCode': 500,
                     'headers': cors_headers,
-                    'body': json.dumps({'error': 'Failed to generate image', 'details': response.text})
+                    'body': json.dumps({
+                        'error': 'Failed to generate image',
+                        'details': response.text
+                    })
                 }
 
+        print("Max retries exceeded")
         return {
             'statusCode': 503,
             'headers': cors_headers,
@@ -88,6 +101,7 @@ def lambda_handler(event, context):
         }
 
     except Exception as e:
+        print(f"Unexpected error: {str(e)}")
         return {
             'statusCode': 500,
             'headers': cors_headers,
