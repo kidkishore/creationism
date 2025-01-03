@@ -79,7 +79,7 @@ Resources:
       Action: lambda:InvokeFunction
       FunctionName: !Ref StableDiffusionFunction
       Principal: apigateway.amazonaws.com
-      SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ApiGateway}/*"
+      SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ApiGateway}/*/POST/generate"
 
   # API Gateway
   ApiGateway:
@@ -165,3 +165,23 @@ Resources:
     Properties:
       LogGroupName: !Sub "/aws/apigateway/${ApiGateway}"
       RetentionInDays: 30
+  # Add this to your CloudFormation template
+  GatewayResponses:
+    Type: AWS::ApiGateway::GatewayResponse
+    Properties:
+      RestApiId: !Ref ApiGateway
+      ResponseType: DEFAULT_4XX
+      ResponseParameters:
+        gatewayresponse.header.Access-Control-Allow-Origin: "'https://kidkishore.github.io/creationism'"
+        gatewayresponse.header.Access-Control-Allow-Headers: "'Content-Type'"
+        gatewayresponse.header.Access-Control-Allow-Methods: "'OPTIONS,POST'"
+
+  Gateway5XXResponse:
+    Type: AWS::ApiGateway::GatewayResponse
+    Properties:
+      RestApiId: !Ref ApiGateway
+      ResponseType: DEFAULT_5XX
+      ResponseParameters:
+        gatewayresponse.header.Access-Control-Allow-Origin: "'https://kidkishore.github.io/creationism'"
+        gatewayresponse.header.Access-Control-Allow-Headers: "'Content-Type'"
+        gatewayresponse.header.Access-Control-Allow-Methods: "'OPTIONS,POST'"

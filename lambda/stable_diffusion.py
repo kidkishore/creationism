@@ -5,9 +5,9 @@ import os
 import boto3
 
 def lambda_handler(event, context):
-    cors_headers = {
+cors_headers = {
         'Access-Control-Allow-Origin': 'https://kidkishore.github.io/creationism',
-        'Access-Control-Allow-Headers': 'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token',
+        'Access-Control-Allow-Headers': 'Content-Type',
         'Access-Control-Allow-Methods': 'OPTIONS,POST'
     }
 
