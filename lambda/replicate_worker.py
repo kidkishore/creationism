@@ -27,11 +27,12 @@ def lambda_handler(event, context):
                 "Content-Type": "application/json"
             },
             json={
-                "version": "8cd946f198a14bfc88c642590d54bdd3e76dd330a743772a0845c0aa5401b612",
+                "version": "5957069d5c509126a73c7cb68abcddbb985aeefa4d318e7c63ec1352ce6da68c",
                 "input": {
                     "prompt": prompt,
-                    "render_mode": "mesh",  # Ensure we get a 3D mesh
-                    "guidance_scale": 15.0  # Control how closely it follows the prompt
+                    "save_mesh": True,
+                    "num_inference_steps": 32,
+                    "guidance_scale": 15.0
                 }
             }
         )
