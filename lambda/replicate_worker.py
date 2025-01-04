@@ -8,7 +8,6 @@ import requests
 dynamo = boto3.resource('dynamodb')
 job_table = dynamo.Table(os.environ['JOB_TABLE'])
 s3 = boto3.client('s3')
-api_client = boto3.client('apigatewaymanagementapi')
 
 def lambda_handler(event, context):
     replicate_token = os.environ["REPLICATE_API_KEY"]
@@ -120,8 +119,8 @@ def update_job_status(job_id, status, error=None, model_url=None):
 
 def post_to_client(domain_name, stage, conn_id, message):
     endpoint_url = f"https://{domain_name}/{stage}"
-    api_client.post_to_connection(
+    client = boto3.client('apigatewaymanagementapi', endpoint_url=endpoint_url)
+    client.post_to_connection(
         Data=json.dumps(message),
-        ConnectionId=conn_id,
-        EndpointUrl=endpoint_url
+        ConnectionId=conn_id
     )
