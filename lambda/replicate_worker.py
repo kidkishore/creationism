@@ -78,14 +78,21 @@ def lambda_handler(event, context):
             post_to_client(domain_name, stage, conn_id, {"error": msg})
             continue
 
-        # For Shap-E model, we expect output to be a string URL to the .obj file
-        if not isinstance(output, str):
+        # Handle list output from Shap-E model
+        if isinstance(output, list):
+            # Find the .obj file URL
+            obj_urls = [url for url in output if url.endswith('.obj')]
+            if not obj_urls:
+                msg = f"No .obj file found in output: {json.dumps(output)}"
+                update_job_status(job_id, "FAILED", msg)
+                post_to_client(domain_name, stage, conn_id, {"error": msg})
+                continue
+            model_url = obj_urls[0]
+        else:
             msg = f"Unexpected output format from Replicate: {type(output)}. Full output: {json.dumps(output)}"
             update_job_status(job_id, "FAILED", msg)
             post_to_client(domain_name, stage, conn_id, {"error": msg})
             continue
-
-        model_url = output
         file_resp = requests.get(model_url)
         if file_resp.status_code != 200:
             msg = f"Failed to download 3D model from {model_url}"
