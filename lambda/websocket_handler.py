@@ -7,7 +7,6 @@ dynamo = boto3.resource('dynamodb')
 connections_table = dynamo.Table(os.environ['CONNECTIONS_TABLE'])
 job_table = dynamo.Table(os.environ['JOB_TABLE'])
 sqs = boto3.client('sqs')
-api_client = boto3.client('apigatewaymanagementapi')
 
 # We'll need the domain name + stage to post back to the client
 # e.g. wss://xxxxxx.execute-api.us-east-1.amazonaws.com/prod
@@ -78,10 +77,15 @@ def on_generate(conn_id, prompt, domain_name, stage):
     return { "statusCode": 200, "body": "Job queued." }
 
 def send_to_client(domain_name, stage, conn_id, message):
-    endpoint_url = f"https://{domain_name}/{stage}"
+    # Initialize the API client with the endpoint
+    api_client = boto3.client(
+        'apigatewaymanagementapi',
+        endpoint_url=f"https://{domain_name}/{stage}"
+    )
+    
+    # Post the message to the connection
     response = api_client.post_to_connection(
         Data=json.dumps(message),
-        ConnectionId=conn_id,
-        EndpointUrl=endpoint_url
+        ConnectionId=conn_id
     )
     return response
