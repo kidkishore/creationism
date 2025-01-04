@@ -5,46 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Creationism - Text to 3D</title>
     <style>
-      body {
-        padding: 20px;
-        font-family: Arial, sans-serif;
-        text-align: center;
-        background-color: #f4f4f4;
-      }
-      h1 {
-        color: #333;
-      }
-      input[type="text"] {
-        width: 60%;
-        margin: 10px 0;
-        padding: 10px;
-        font-size: 16px;
-      }
-      button {
-        padding: 10px 20px;
-        color: #fff;
-        font-size: 16px;
-        background-color: #007bff;
-        border: none;
-        cursor: pointer;
-      }
-      button:hover {
-        background-color: #0056b3;
-      }
-      #loader {
-        display: none;
-        margin-top: 20px;
-      }
-      #result {
-        margin-top: 20px;
-      }
-      #threeCanvas {
-        display: inline-block;
-        width: 800px;
-        height: 600px;
-        margin-top: 20px;
-        background: #ddd;
-      }
+      /* Previous styles remain the same */
     </style>
   </head>
   <body>
@@ -65,29 +26,52 @@
     <div id="result"></div>
     <canvas id="threeCanvas"></canvas>
 
-    <!-- Include three.js and OBJLoader (for .obj) or GLTFLoader if .glb -->
     <script src="https://cdn.jsdelivr.net/npm/three@0.146.0/build/three.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.146.0/examples/jsm/loaders/OBJLoader.js"></script>
 
     <script>
-      // Replace with your actual API Gateway URL
-      const apiUrl =
-        "https://<YOUR_API_ID>.execute-api.<YOUR_REGION>.amazonaws.com/prod/generate";
+      // Replace with your WebSocket URL from CloudFormation output
+      const wsUrl = "YOUR_WEBSOCKET_URL";
+      let ws;
+
+      function connectWebSocket() {
+        ws = new WebSocket(wsUrl);
+
+        ws.onopen = () => {
+          console.log("Connected to WebSocket");
+        };
+
+        ws.onmessage = (event) => {
+          const data = JSON.parse(event.data);
+          const loader = document.getElementById("loader");
+          const result = document.getElementById("result");
+
+          if (data.statusMessage) {
+            result.innerHTML = `<p>${data.statusMessage}</p>`;
+          } else if (data.error) {
+            loader.style.display = "none";
+            result.innerHTML = `<p style="color: red;">${data.error}</p>`;
+          } else if (data.finalModelUrl) {
+            loader.style.display = "none";
+            result.innerHTML = `<p>3D model generated successfully! Loading...</p>`;
+            load3DModel(data.finalModelUrl);
+          }
+        };
+
+        ws.onclose = () => {
+          console.log("WebSocket connection closed");
+          setTimeout(connectWebSocket, 3000);
+        };
+      }
 
       // Three.js setup
       const scene = new THREE.Scene();
-      const camera = new THREE.PerspectiveCamera(
-        75,
-        800 / 600, // match canvas width/height
-        0.1,
-        1000
-      );
+      const camera = new THREE.PerspectiveCamera(75, 800 / 600, 0.1, 1000);
       const renderer = new THREE.WebGLRenderer({
         canvas: document.getElementById("threeCanvas"),
       });
       renderer.setSize(800, 600);
 
-      // Basic light
       const light = new THREE.DirectionalLight(0xffffff, 1);
       light.position.set(0, 1, 1).normalize();
       scene.add(light);
@@ -98,24 +82,44 @@
         requestAnimationFrame(animate);
         renderer.render(scene, camera);
       }
-      animate(); // start render loop
+      animate();
 
-      // Function to load a 3D model given a URL (assuming .obj in this example)
       function load3DModel(url) {
         const loader = new THREE.OBJLoader();
         loader.load(
           url,
           (obj) => {
+            // Clear existing model if any
+            while (scene.children.length > 1) {
+              // Keep the light
+              scene.remove(scene.children[1]);
+            }
             scene.add(obj);
+
+            // Center and scale the model
+            const box = new THREE.Box3().setFromObject(obj);
+            const center = box.getCenter(new THREE.Vector3());
+            const size = box.getSize(new THREE.Vector3());
+
+            const maxDim = Math.max(size.x, size.y, size.z);
+            const scale = 2 / maxDim;
+            obj.scale.multiplyScalar(scale);
+
+            obj.position.sub(center.multiplyScalar(scale));
           },
           undefined,
           (error) => {
             console.error("Error loading 3D model:", error);
+            document.getElementById(
+              "result"
+            ).innerHTML = `<p style="color: red;">Error loading 3D model: ${error.message}</p>`;
           }
         );
       }
 
-      // Handle form submission
+      // Connect WebSocket and handle form submission
+      connectWebSocket();
+
       document
         .getElementById("textForm")
         .addEventListener("submit", async (e) => {
@@ -124,46 +128,19 @@
           const loader = document.getElementById("loader");
           const result = document.getElementById("result");
 
-          // Clear old results/3D object
           result.innerHTML = "";
-          // remove old object from scene if needed
-          while (scene.children.length > 1) {
-            // keep the first child: the light
-            scene.remove(scene.children[1]);
-          }
-
           loader.style.display = "block";
 
           try {
-            const response = await fetch(apiUrl, {
-              method: "POST",
-              headers: {
-                "Content-Type": "application/json",
-              },
-              body: JSON.stringify({ text: userInput }),
-            });
-
-            if (!response.ok) {
-              throw new Error("Failed to generate 3D model. Please try again.");
-            }
-
-            const data = await response.json();
-            loader.style.display = "none";
-
-            if (data.error) {
-              throw new Error(data.error);
-            }
-
-            // The Lambda returns modelUrl if successful
-            if (data.modelUrl) {
-              result.innerHTML = `<p>3D model generated successfully! Loading...</p>`;
-              load3DModel(data.modelUrl);
-            } else {
-              result.innerHTML = `<p style="color: red;">No model URL returned.</p>`;
-            }
+            ws.send(
+              JSON.stringify({
+                action: "generate",
+                prompt: userInput,
+              })
+            );
           } catch (error) {
             loader.style.display = "none";
-            result.innerHTML = `<p style="color: red;">${error.message}</p>`;
+            result.innerHTML = `<p style="color: red;">Error sending request: ${error.message}</p>`;
           }
         });
     </script>

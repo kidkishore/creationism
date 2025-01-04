@@ -52,12 +52,19 @@ Resources:
     Properties:
       BucketName: creationism-image-storage
       AccessControl: Private
+      CorsConfiguration:
+        CorsRules:
+          - AllowedHeaders: ['*']
+            AllowedMethods: [GET]
+            AllowedOrigins: ['*']
+            MaxAge: 3000
 
   # SQS Queue
   ReplicateQueue:
     Type: AWS::SQS::Queue
     Properties:
       QueueName: creationism-replicate-queue
+      VisibilityTimeout: 900  # Match Lambda timeout
 
   # IAM Role for WebSocket Handler
   WebSocketLambdaRole:
