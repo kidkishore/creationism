@@ -19,7 +19,7 @@ def lambda_handler(event, context):
         domain_name = body["domainName"]
         stage = body["stage"]
 
-        # 1) Call Replicate to start
+        # 1) Call Replicate to start - using Shap-E model
         create_resp = requests.post(
             "https://api.replicate.com/v1/predictions",
             headers={
@@ -27,12 +27,15 @@ def lambda_handler(event, context):
                 "Content-Type": "application/json"
             },
             json={
-                "version": "1a4da7adf0bc84cd786c1df41c02db3097d899f5c159f5fd5814a11117bdf02b",
-                "input": { "prompt": prompt }
+                "version": "8cd946f198a14bfc88c642590d54bdd3e76dd330a743772a0845c0aa5401b612",
+                "input": {
+                    "prompt": prompt,
+                    "render_mode": "mesh",  # Ensure we get a 3D mesh
+                    "guidance_scale": 15.0  # Control how closely it follows the prompt
+                }
             }
         )
         if create_resp.status_code != 201:
-            # Mark job as failed, notify user
             msg = f"Replicate error: {create_resp.text}"
             update_job_status(job_id, "FAILED", msg)
             post_to_client(domain_name, stage, conn_id, {"error": msg})
@@ -74,37 +77,17 @@ def lambda_handler(event, context):
             post_to_client(domain_name, stage, conn_id, {"error": msg})
             continue
 
-        # Handle different output formats
-        if isinstance(output, list):
-            if not output:
-                msg = "Replicate returned empty list"
-                update_job_status(job_id, "FAILED", msg)
-                post_to_client(domain_name, stage, conn_id, {"error": msg})
-                continue
-            model_url = output[0]
-        elif isinstance(output, str):
-            model_url = output
-        elif isinstance(output, dict):
-            # Try to find URL in dictionary
-            if 'url' in output:
-                model_url = output['url']
-            elif 'file' in output:
-                model_url = output['file']
-            else:
-                # If we can't find a URL, log the structure and fail
-                msg = f"Could not find model URL in output dictionary: {json.dumps(output)}"
-                update_job_status(job_id, "FAILED", msg)
-                post_to_client(domain_name, stage, conn_id, {"error": msg})
-                continue
-        else:
-            msg = f"Unexpected output format from Replicate: {type(output)}"
+        # For Shap-E model, we expect output to be a string URL to the .obj file
+        if not isinstance(output, str):
+            msg = f"Unexpected output format from Replicate: {type(output)}. Full output: {json.dumps(output)}"
             update_job_status(job_id, "FAILED", msg)
             post_to_client(domain_name, stage, conn_id, {"error": msg})
             continue
 
+        model_url = output
         file_resp = requests.get(model_url)
         if file_resp.status_code != 200:
-            msg = "Failed to download 3D model"
+            msg = f"Failed to download 3D model from {model_url}"
             update_job_status(job_id, "FAILED", msg)
             post_to_client(domain_name, stage, conn_id, {"error": msg})
             continue
@@ -115,7 +98,7 @@ def lambda_handler(event, context):
             Bucket=bucket_name,
             Key=s3_key,
             Body=file_resp.content,
-            ContentType="text/plain"
+            ContentType="application/x-tgif"  # Proper MIME type for .obj files
         )
         presigned_url = s3.generate_presigned_url(
             "get_object",
