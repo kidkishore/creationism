@@ -54,9 +54,9 @@ Resources:
       AccessControl: Private
       CorsConfiguration:
         CorsRules:
-          - AllowedHeaders: ['*']
+          - AllowedHeaders: ["*"]
             AllowedMethods: [GET]
-            AllowedOrigins: ['*']
+            AllowedOrigins: ["*"]
             MaxAge: 3000
 
   # SQS Queue
@@ -64,7 +64,7 @@ Resources:
     Type: AWS::SQS::Queue
     Properties:
       QueueName: creationism-replicate-queue
-      VisibilityTimeout: 900  # Match Lambda timeout
+      VisibilityTimeout: 900 # Match Lambda timeout
 
   # IAM Role for WebSocket Handler
   WebSocketLambdaRole:
@@ -204,14 +204,17 @@ Resources:
       ApiId: !Ref WebSocketApi
       RouteKey: "$connect"
       AuthorizationType: NONE
-      Target: !Sub "integrations/${ConnectIntegration.Ref}"
+      Target: !Join
+        - "/"
+        - - "integrations"
+          - !Ref ConnectIntegration
 
   ConnectIntegration:
     Type: AWS::ApiGatewayV2::Integration
     Properties:
       ApiId: !Ref WebSocketApi
       IntegrationType: AWS_PROXY
-      IntegrationUri: !GetAtt WebSocketHandlerFunction.Arn
+      IntegrationUri: !Sub arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${WebSocketHandlerFunction.Arn}/invocations
       IntegrationMethod: POST
 
   # $disconnect route
@@ -221,14 +224,17 @@ Resources:
       ApiId: !Ref WebSocketApi
       RouteKey: "$disconnect"
       AuthorizationType: NONE
-      Target: !Sub "integrations/${DisconnectIntegration.Ref}"
+      Target: !Join
+        - "/"
+        - - "integrations"
+          - !Ref DisconnectIntegration
 
   DisconnectIntegration:
     Type: AWS::ApiGatewayV2::Integration
     Properties:
       ApiId: !Ref WebSocketApi
       IntegrationType: AWS_PROXY
-      IntegrationUri: !GetAtt WebSocketHandlerFunction.Arn
+      IntegrationUri: !Sub arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${WebSocketHandlerFunction.Arn}/invocations
       IntegrationMethod: POST
 
   # generate route
@@ -238,14 +244,17 @@ Resources:
       ApiId: !Ref WebSocketApi
       RouteKey: "generate"
       AuthorizationType: NONE
-      Target: !Sub "integrations/${GenerateIntegration.Ref}"
+      Target: !Join
+        - "/"
+        - - "integrations"
+          - !Ref GenerateIntegration
 
   GenerateIntegration:
     Type: AWS::ApiGatewayV2::Integration
     Properties:
       ApiId: !Ref WebSocketApi
       IntegrationType: AWS_PROXY
-      IntegrationUri: !GetAtt WebSocketHandlerFunction.Arn
+      IntegrationUri: !Sub arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${WebSocketHandlerFunction.Arn}/invocations
       IntegrationMethod: POST
 
   # Stage
