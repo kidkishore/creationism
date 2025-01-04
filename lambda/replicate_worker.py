@@ -51,6 +51,11 @@ def lambda_handler(event, context):
             )
             poll_data = poll_resp.json()
             status = poll_data["status"]
+            
+            # Send progress update to client
+            post_to_client(domain_name, stage, conn_id, {
+                "statusMessage": f"Still working... Current status: {status}"
+            })
 
         if status != 'succeeded':
             msg = "Prediction failed or canceled."
@@ -68,7 +73,8 @@ def lambda_handler(event, context):
             update_job_status(job_id, "FAILED", msg)
             post_to_client(domain_name, stage, conn_id, {"error": msg})
             continue
-            
+
+        # Handle different output formats
         if isinstance(output, list):
             if not output:
                 msg = "Replicate returned empty list"
@@ -78,6 +84,18 @@ def lambda_handler(event, context):
             model_url = output[0]
         elif isinstance(output, str):
             model_url = output
+        elif isinstance(output, dict):
+            # Try to find URL in dictionary
+            if 'url' in output:
+                model_url = output['url']
+            elif 'file' in output:
+                model_url = output['file']
+            else:
+                # If we can't find a URL, log the structure and fail
+                msg = f"Could not find model URL in output dictionary: {json.dumps(output)}"
+                update_job_status(job_id, "FAILED", msg)
+                post_to_client(domain_name, stage, conn_id, {"error": msg})
+                continue
         else:
             msg = f"Unexpected output format from Replicate: {type(output)}"
             update_job_status(job_id, "FAILED", msg)
