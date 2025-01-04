@@ -12,25 +12,65 @@ sqs = boto3.client('sqs')
 # e.g. wss://xxxxxx.execute-api.us-east-1.amazonaws.com/prod
 # We read these from your WebSocket requestContext
 def lambda_handler(event, context):
-    route_key = event.get("requestContext", {}).get("routeKey", "")
-    connection_id = event["requestContext"].get("connectionId")
+    replicate_token = os.environ["REPLICATE_API_KEY"]
+    print("Processing SQS messages...")  # Debug log
+    
+    for record in event["Records"]:
+        body = json.loads(record["body"])
+        print(f"Processing job: {json.dumps(body)}")  # Debug log
+        
+        job_id = body["job_id"]
+        prompt = body["prompt"]
+        conn_id = body["connectionId"]
+        domain_name = body["domainName"]
+        stage = body["stage"]
 
-    if route_key == "$connect":
-        return on_connect(connection_id)
+        # 1) Call Replicate to start
+        print(f"Starting Replicate job with prompt: {prompt}")  # Debug log
+        create_resp = requests.post(
+            "https://api.replicate.com/v1/predictions",
+            headers={
+                "Authorization": f"Token {replicate_token}",
+                "Content-Type": "application/json"
+            },
+            json={
+                "version": "1a4da7adf0bc84cd786c1df41c02db3097d899f5c159f5fd5814a11117bdf02b",
+                "input": { "prompt": prompt }
+            }
+        )
+        print(f"Replicate response status: {create_resp.status_code}")  # Debug log
+        print(f"Replicate response: {create_resp.text}")  # Debug log
+        
+        if create_resp.status_code != 201:
+            msg = f"Replicate error: {create_resp.text}"
+            print(f"Error response from Replicate: {msg}")  # Debug log
+            update_job_status(job_id, "FAILED", msg)
+            post_to_client(domain_name, stage, conn_id, {"error": msg})
+            continue
 
-    elif route_key == "$disconnect":
-        return on_disconnect(connection_id)
+        prediction = create_resp.json()
+        prediction_id = prediction["id"]
+        status = prediction["status"]
 
-    elif route_key == "generate":
-        body = json.loads(event.get("body", "{}"))
-        prompt = body.get("prompt", "")
-        domain_name = event["requestContext"].get("domainName")
-        stage = event["requestContext"].get("stage")
+        # 2) Poll for completion
+        print(f"Polling for completion of prediction {prediction_id}")  # Debug log
+        while status not in ['succeeded', 'failed', 'canceled']:
+            time.sleep(3)
+            poll_resp = requests.get(
+                f"https://api.replicate.com/v1/predictions/{prediction_id}",
+                headers={"Authorization": f"Token {replicate_token}"}
+            )
+            poll_data = poll_resp.json()
+            status = poll_data["status"]
+            print(f"Current status: {status}")  # Debug log
 
-        return on_generate(connection_id, prompt, domain_name, stage)
+        if status != 'succeeded':
+            msg = "Prediction failed or canceled."
+            print(f"Job failed: {msg}")  # Debug log
+            update_job_status(job_id, "FAILED", msg)
+            post_to_client(domain_name, stage, conn_id, {"error": msg})
+            continue
 
-    else:
-        return { "statusCode": 200, "body": "Unknown route" }
 
 def on_connect(conn_id):
     # Store the new connection
@@ -89,3 +129,18 @@ def send_to_client(domain_name, stage, conn_id, message):
         ConnectionId=conn_id
     )
     return response
+
+
+def post_to_client(domain_name, stage, conn_id, message):
+    print(f"Attempting to post to client. Domain: {domain_name}, Stage: {stage}, ConnID: {conn_id}")  # Debug log
+    try:
+        endpoint_url = f"https://{domain_name}/{stage}"
+        api_client = boto3.client('apigatewaymanagementapi', endpoint_url=endpoint_url)
+        response = api_client.post_to_connection(
+            Data=json.dumps(message),
+            ConnectionId=conn_id
+        )
+        print(f"Successfully posted to client: {response}")  # Debug log
+    except Exception as e:
+        print(f"Error posting to client: {str(e)}")  # Debug log
+        raise
