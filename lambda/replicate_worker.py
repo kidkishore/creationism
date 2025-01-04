@@ -27,7 +27,7 @@ def lambda_handler(event, context):
                 "Content-Type": "application/json"
             },
             json={
-                "version": "5957069d5c509126a73c7cb68abcddbb985aeefa4d318e7c63ec1352ce6da68c",
+                "version": "abfc30dc09f51fe27602185f313860c32d501e7a4af6c5a23872eae80e651cb8",
                 "input": {
                     "prompt": prompt,
                     "save_mesh": True,
