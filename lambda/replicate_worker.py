@@ -59,14 +59,31 @@ def lambda_handler(event, context):
             continue
 
         # 3) Download & store result in S3
-        output = poll_data.get("output", [])
-        if not output or not isinstance(output, list):
-            msg = "No valid output from Replicate"
+        print(f"Full Replicate response: {json.dumps(poll_data, indent=2)}")  # Debug log
+        output = poll_data.get("output")
+        print(f"Output value: {output}")  # Debug log
+        
+        if output is None:
+            msg = f"No output from Replicate. Full response: {json.dumps(poll_data)}"
+            update_job_status(job_id, "FAILED", msg)
+            post_to_client(domain_name, stage, conn_id, {"error": msg})
+            continue
+            
+        if isinstance(output, list):
+            if not output:
+                msg = "Replicate returned empty list"
+                update_job_status(job_id, "FAILED", msg)
+                post_to_client(domain_name, stage, conn_id, {"error": msg})
+                continue
+            model_url = output[0]
+        elif isinstance(output, str):
+            model_url = output
+        else:
+            msg = f"Unexpected output format from Replicate: {type(output)}"
             update_job_status(job_id, "FAILED", msg)
             post_to_client(domain_name, stage, conn_id, {"error": msg})
             continue
 
-        model_url = output[0]
         file_resp = requests.get(model_url)
         if file_resp.status_code != 200:
             msg = "Failed to download 3D model"
