@@ -93,6 +93,7 @@
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/three@0.146.0/build/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.146.0/examples/js/controls/OrbitControls.js"></script>
 
     <script>
       const wsUrl = "wss://prn7s9wd73.execute-api.us-west-2.amazonaws.com/prod";
@@ -100,6 +101,7 @@
       let progressInterval;
       let connectionAttempts = 0;
       const MAX_RECONNECT_ATTEMPTS = 5;
+      let controls;
 
       function startProgressAnimation() {
         const progressBar = document.getElementById("progressBar");
@@ -212,13 +214,15 @@
             mesh.position.sub(center.multiplyScalar(scale));
 
             // Add orbit controls
-            controls = new THREE.OrbitControls(camera, renderer.domElement);
-            controls.enableDamping = true;
-            controls.dampingFactor = 0.05;
-            controls.screenSpacePanning = false;
-            controls.enableZoom = true;
-            controls.autoRotate = true;
-            controls.autoRotateSpeed = 2.0;
+            if (!controls) {
+              controls = new THREE.OrbitControls(camera, renderer.domElement);
+              controls.enableDamping = true;
+              controls.dampingFactor = 0.05;
+              controls.screenSpacePanning = false;
+              controls.enableZoom = true;
+              controls.autoRotate = true;
+              controls.autoRotateSpeed = 2.0;
+            }
           }
         };
 
