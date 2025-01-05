@@ -174,14 +174,31 @@ def post_to_client(domain_name, stage, conn_id, message):
             # Convert to base64
             base64_glb = base64.b64encode(glb_data).decode('utf-8')
             
-            # Send base64 GLB instead of raw mesh data
-            modified_message = {
-                'status': 'completed',
-                'glbData': f"data:model/gltf-binary;base64,{base64_glb}"
-            }
+            # Split into chunks of ~25KB each
+            chunk_size = 25000
+            chunks = [base64_glb[i:i + chunk_size] for i in range(0, len(base64_glb), chunk_size)]
+            total_chunks = len(chunks)
             
+            # Send chunks sequentially
+            for i, chunk in enumerate(chunks):
+                chunk_message = {
+                    'status': 'chunk',
+                    'chunkIndex': i,
+                    'totalChunks': total_chunks,
+                    'chunk': chunk
+                }
+                client.post_to_connection(
+                    Data=json.dumps(chunk_message),
+                    ConnectionId=conn_id
+                )
+                time.sleep(0.1)  # Small delay between chunks
+            
+            # Send completion message
             client.post_to_connection(
-                Data=json.dumps(modified_message),
+                Data=json.dumps({
+                    'status': 'completed',
+                    'message': 'Model data transfer complete'
+                }),
                 ConnectionId=conn_id
             )
         else:

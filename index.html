@@ -153,8 +153,30 @@
             result.innerHTML = `
               <div class="bg-red-50 p-4 rounded-lg text-red-700 border border-red-200">${data.error}</div>
             `;
-          } else if (data.meshData) {
-            console.log("Received mesh data:", data.meshData);
+          } else if (data.status === 'chunk') {
+            // Initialize chunk storage if needed
+            if (!window.modelChunks) {
+              window.modelChunks = new Array(data.totalChunks);
+            }
+            
+            // Store this chunk
+            window.modelChunks[data.chunkIndex] = data.chunk;
+            
+            // Update progress
+            const progress = ((data.chunkIndex + 1) / data.totalChunks * 100).toFixed(0);
+            result.innerHTML = `
+              <div class="bg-blue-50 p-4 rounded-lg text-blue-700 border border-blue-200">
+                Receiving model data: ${progress}%
+              </div>
+            `;
+            
+          } else if (data.status === 'completed' && window.modelChunks) {
+            // Combine all chunks and create GLB URL
+            const base64Data = window.modelChunks.join('');
+            const glbData = `data:model/gltf-binary;base64,${base64Data}`;
+            window.modelChunks = null; // Clear chunks from memory
+            
+            console.log("Model data transfer complete");
             stopProgressAnimation();
             loader.classList.add("hidden");
             result.innerHTML = `
@@ -163,67 +185,50 @@
               </div>
             `;
 
-            // Create geometry from received data
-            const geometry = new THREE.BufferGeometry();
+            // Load GLB data
+            const loader = new THREE.GLTFLoader();
+            loader.load(
+              glbData,
+              (gltf) => {
+                // Clear previous model
+                while (scene.children.length > 2) {
+                  scene.remove(scene.children[2]);
+                }
 
-            // Add vertices
-            const vertices = new Float32Array(data.meshData.vertices.flat());
-            geometry.setAttribute(
-              "position",
-              new THREE.BufferAttribute(vertices, 3)
+                const model = gltf.scene;
+                scene.add(model);
+
+                // Center and scale
+                const box = new THREE.Box3().setFromObject(model);
+                const center = box.getCenter(new THREE.Vector3());
+                const size = box.getSize(new THREE.Vector3());
+
+                const maxDim = Math.max(size.x, size.y, size.z);
+                const scale = 2 / maxDim;
+                model.scale.multiplyScalar(scale);
+                model.position.sub(center.multiplyScalar(scale));
+
+                // Add orbit controls if not already added
+                if (!controls) {
+                  controls = new THREE.OrbitControls(camera, renderer.domElement);
+                  controls.enableDamping = true;
+                  controls.dampingFactor = 0.05;
+                  controls.screenSpacePanning = false;
+                  controls.enableZoom = true;
+                  controls.autoRotate = true;
+                  controls.autoRotateSpeed = 2.0;
+                }
+              },
+              undefined,
+              (error) => {
+                console.error('Error loading GLB:', error);
+                result.innerHTML = `
+                  <div class="bg-red-50 p-4 rounded-lg text-red-700 border border-red-200">
+                    Error loading 3D model. Please try again.
+                  </div>
+                `;
+              }
             );
-
-            // Add faces if available
-            if (data.meshData.faces) {
-              const indices = new Uint16Array(data.meshData.faces.flat());
-              geometry.setIndex(new THREE.BufferAttribute(indices, 1));
-            }
-
-            // Add colors if available
-            if (data.meshData.colors) {
-              const colors = new Float32Array(data.meshData.colors.flat());
-              geometry.setAttribute(
-                "color",
-                new THREE.BufferAttribute(colors, 3)
-              );
-            }
-
-            geometry.computeVertexNormals();
-
-            // Create mesh
-            const material = new THREE.MeshPhongMaterial({
-              vertexColors: true,
-              side: THREE.DoubleSide,
-            });
-
-            const mesh = new THREE.Mesh(geometry, material);
-
-            // Clear previous model and add new one
-            while (scene.children.length > 2) {
-              scene.remove(scene.children[2]);
-            }
-            scene.add(mesh);
-
-            // Center and scale
-            const box = new THREE.Box3().setFromObject(mesh);
-            const center = box.getCenter(new THREE.Vector3());
-            const size = box.getSize(new THREE.Vector3());
-
-            const maxDim = Math.max(size.x, size.y, size.z);
-            const scale = 2 / maxDim;
-            mesh.scale.multiplyScalar(scale);
-            mesh.position.sub(center.multiplyScalar(scale));
-
-            // Add orbit controls
-            if (!controls) {
-              controls = new THREE.OrbitControls(camera, renderer.domElement);
-              controls.enableDamping = true;
-              controls.dampingFactor = 0.05;
-              controls.screenSpacePanning = false;
-              controls.enableZoom = true;
-              controls.autoRotate = true;
-              controls.autoRotateSpeed = 2.0;
-            }
           }
         };
 
