@@ -125,21 +125,20 @@ def lambda_handler(event, context):
                     output = prediction.get("output")
                     print(f"Prediction succeeded! Output: {json.dumps(output)}")
                     
-                    print(f"Raw output type: {type(output)}, content: {output}")
-                    if isinstance(output, str):
-                        model_url = output
-                    elif isinstance(output, dict):
-                        model_url = output.get('file') or output.get('obj_file')
-                    elif isinstance(output, list) and output:
-                        model_url = output[0] if isinstance(output[0], str) else output[0].get('file') or output[0].get('obj_file')
-                    else:
-                        raise ValueError(f"Unexpected output format: {output}")
-                    
-                    update_job_status(job_id, "COMPLETED", model_url=model_url)
+                    if not output:
+                        raise ValueError("Empty output received")
+
+                    # Extract the json_file data
+                    json_data = output.get('json_file')
+                    if not json_data:
+                        raise ValueError("No json_file in output")
+
                     post_to_client(domain_name, stage, conn_id, {
-                        "finalModelUrl": model_url,
+                        "meshData": json_data,
                         "status": "completed"
                     })
+                    
+                    update_job_status(job_id, "COMPLETED")
                     break
                 elif status in ["failed", "canceled"]:
                     error_msg = f"Prediction {status}"
