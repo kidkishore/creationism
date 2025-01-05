@@ -175,13 +175,13 @@ def post_to_client(domain_name, stage, conn_id, message):
             base64_glb = base64.b64encode(glb_data).decode('utf-8')
             print(f"Total base64 GLB size: {len(base64_glb)} bytes")
             
-            # Split into smaller chunks (8KB each)
-            chunk_size = 8000  # Reduced from 25000 to 8000
+            # Split into smaller chunks (4KB each - reduced from 8KB)
+            chunk_size = 4000
             chunks = [base64_glb[i:i + chunk_size] for i in range(0, len(base64_glb), chunk_size)]
             total_chunks = len(chunks)
             print(f"Split into {total_chunks} chunks of {chunk_size} bytes each")
             
-            # Send chunks sequentially
+            # Send chunks sequentially with retries
             for i, chunk in enumerate(chunks):
                 chunk_message = {
                     'status': 'chunk',
@@ -190,18 +190,27 @@ def post_to_client(domain_name, stage, conn_id, message):
                     'chunk': chunk
                 }
                 message_json = json.dumps(chunk_message)
-                print(f"Sending chunk {i+1}/{total_chunks}, size: {len(message_json)} bytes")
                 
-                try:
-                    client.post_to_connection(
-                        Data=message_json,
-                        ConnectionId=conn_id
-                    )
-                    time.sleep(0.2)  # Increased delay between chunks
-                except Exception as chunk_error:
-                    print(f"Error sending chunk {i+1}: {str(chunk_error)}")
-                    raise
-            
+                # Retry logic
+                max_retries = 3
+                retry_count = 0
+                while retry_count < max_retries:
+                    try:
+                        client.post_to_connection(
+                            Data=message_json,
+                            ConnectionId=conn_id
+                        )
+                        print(f"Successfully sent chunk {i+1}/{total_chunks}")
+                        time.sleep(0.5)  # Increased delay between chunks
+                        break
+                    except Exception as chunk_error:
+                        retry_count += 1
+                        if retry_count == max_retries:
+                            print(f"Failed to send chunk {i+1} after {max_retries} attempts: {str(chunk_error)}")
+                            raise
+                        print(f"Retry {retry_count} for chunk {i+1}")
+                        time.sleep(1)  # Wait before retry
+
             # Send completion message
             print("Sending completion message")
             client.post_to_connection(

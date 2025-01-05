@@ -151,25 +151,33 @@
             stopProgressAnimation();
             loader.classList.add("hidden");
             result.innerHTML = `
-              <div class="bg-red-50 p-4 rounded-lg text-red-700 border border-red-200">${data.error}</div>
+              <div class="bg-red-50 p-4 rounded-lg text-red-700 border border-red-200">
+                ${data.error}
+                <div class="mt-2 text-sm">Please try again. If the problem persists, try a simpler prompt.</div>
+              </div>
             `;
           } else if (data.status === 'chunk') {
             // Initialize chunk storage if needed
             if (!window.modelChunks) {
               window.modelChunks = new Array(data.totalChunks);
+              console.log(`Initializing chunk storage for ${data.totalChunks} chunks`);
             }
             
             // Store this chunk
             window.modelChunks[data.chunkIndex] = data.chunk;
             
-            // Update progress
-            const progress = ((data.chunkIndex + 1) / data.totalChunks * 100).toFixed(0);
+            // Calculate received chunks
+            const receivedChunks = window.modelChunks.filter(chunk => chunk !== undefined).length;
+            const progress = ((receivedChunks / data.totalChunks) * 100).toFixed(0);
+            
+            console.log(`Received chunk ${data.chunkIndex + 1}/${data.totalChunks} (${progress}%)`);
+            
             result.innerHTML = `
               <div class="bg-blue-50 p-4 rounded-lg text-blue-700 border border-blue-200">
                 Receiving model data: ${progress}%
               </div>
             `;
-            
+
           } else if (data.status === 'completed' && window.modelChunks) {
             // Combine all chunks and create GLB URL
             const base64Data = window.modelChunks.join('');
