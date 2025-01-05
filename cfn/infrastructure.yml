@@ -114,6 +114,7 @@ Resources:
         S3Bucket: !Ref LambdaCodeBucket
         S3Key: !Ref WebsocketHandlerKey
       Timeout: 900 # up to 15 minutes if needed
+      MemorySize: 512
       Environment:
         Variables:
           CONNECTIONS_TABLE: !Ref ConnectionsTable
@@ -175,6 +176,7 @@ Resources:
         S3Bucket: !Ref LambdaCodeBucket
         S3Key: !Ref WorkerHandlerKey
       Timeout: 900
+      MemorySize: 1024
       Environment:
         Variables:
           REPLICATE_API_KEY: !Ref ReplicateApiKey

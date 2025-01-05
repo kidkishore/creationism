@@ -173,11 +173,13 @@ def post_to_client(domain_name, stage, conn_id, message):
             
             # Convert to base64
             base64_glb = base64.b64encode(glb_data).decode('utf-8')
+            print(f"Total base64 GLB size: {len(base64_glb)} bytes")
             
-            # Split into chunks of ~25KB each
-            chunk_size = 25000
+            # Split into smaller chunks (8KB each)
+            chunk_size = 8000  # Reduced from 25000 to 8000
             chunks = [base64_glb[i:i + chunk_size] for i in range(0, len(base64_glb), chunk_size)]
             total_chunks = len(chunks)
+            print(f"Split into {total_chunks} chunks of {chunk_size} bytes each")
             
             # Send chunks sequentially
             for i, chunk in enumerate(chunks):
@@ -187,13 +189,21 @@ def post_to_client(domain_name, stage, conn_id, message):
                     'totalChunks': total_chunks,
                     'chunk': chunk
                 }
-                client.post_to_connection(
-                    Data=json.dumps(chunk_message),
-                    ConnectionId=conn_id
-                )
-                time.sleep(0.1)  # Small delay between chunks
+                message_json = json.dumps(chunk_message)
+                print(f"Sending chunk {i+1}/{total_chunks}, size: {len(message_json)} bytes")
+                
+                try:
+                    client.post_to_connection(
+                        Data=message_json,
+                        ConnectionId=conn_id
+                    )
+                    time.sleep(0.2)  # Increased delay between chunks
+                except Exception as chunk_error:
+                    print(f"Error sending chunk {i+1}: {str(chunk_error)}")
+                    raise
             
             # Send completion message
+            print("Sending completion message")
             client.post_to_connection(
                 Data=json.dumps({
                     'status': 'completed',
@@ -205,8 +215,10 @@ def post_to_client(domain_name, stage, conn_id, message):
             if 'error' in message and isinstance(message['error'], str):
                 message['error'] = truncate_error_msg(message['error'], 1024)
                 
+            message_json = json.dumps(message)
+            print(f"Sending regular message, size: {len(message_json)} bytes")
             client.post_to_connection(
-                Data=json.dumps(message),
+                Data=message_json,
                 ConnectionId=conn_id
             )
             
