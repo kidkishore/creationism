@@ -4,6 +4,10 @@ import time
 import uuid
 import boto3
 import requests
+import base64
+import struct
+import numpy as np
+from io import BytesIO
 
 dynamo = boto3.resource('dynamodb')
 job_table = dynamo.Table(os.environ['JOB_TABLE'])
@@ -51,22 +55,146 @@ def update_job_status(job_id, status, error=None, model_url=None):
             except Exception as e2:
                 print(f"Second attempt to update job status failed: {str(e2)}")
 
+def create_glb(vertices, faces=None, colors=None):
+    """Convert mesh data to GLB format"""
+    # Create binary buffer for vertex positions
+    vertex_data = np.array(vertices, dtype=np.float32).tobytes()
+    
+    # Create binary buffer for indices if faces are provided
+    index_data = b''
+    if faces is not None:
+        index_data = np.array(faces, dtype=np.uint16).tobytes()
+    
+    # Create binary buffer for colors if provided
+    color_data = b''
+    if colors is not None:
+        color_data = np.array(colors, dtype=np.float32).tobytes()
+
+    # Combine all buffer data
+    buffer_data = vertex_data + index_data + color_data
+    
+    # Pad buffer to 4-byte alignment
+    padding_length = (4 - (len(buffer_data) % 4)) % 4
+    buffer_data += b'\x00' * padding_length
+
+    # Create JSON chunk
+    json_data = {
+        "asset": {"version": "2.0"},
+        "scene": 0,
+        "scenes": [{"nodes": [0]}],
+        "nodes": [{"mesh": 0}],
+        "meshes": [{
+            "primitives": [{
+                "attributes": {
+                    "POSITION": 1
+                },
+                "indices": 2 if faces is not None else None,
+                "mode": 4  # TRIANGLES
+            }]
+        }],
+        "bufferViews": [
+            {
+                "buffer": 0,
+                "byteOffset": 0,
+                "byteLength": len(vertex_data),
+                "target": 34962  # ARRAY_BUFFER
+            }
+        ],
+        "accessors": [
+            {
+                "bufferView": 0,
+                "componentType": 5126,  # FLOAT
+                "count": len(vertices),
+                "type": "VEC3",
+                "max": np.max(vertices, axis=0).tolist(),
+                "min": np.min(vertices, axis=0).tolist()
+            }
+        ],
+        "buffers": [{"byteLength": len(buffer_data)}]
+    }
+
+    if faces is not None:
+        json_data["bufferViews"].append({
+            "buffer": 0,
+            "byteOffset": len(vertex_data),
+            "byteLength": len(index_data),
+            "target": 34963  # ELEMENT_ARRAY_BUFFER
+        })
+        json_data["accessors"].append({
+            "bufferView": 1,
+            "componentType": 5123,  # UNSIGNED_SHORT
+            "count": len(faces) * 3,
+            "type": "SCALAR"
+        })
+
+    if colors is not None:
+        json_data["meshes"][0]["primitives"][0]["attributes"]["COLOR_0"] = 3
+        json_data["bufferViews"].append({
+            "buffer": 0,
+            "byteOffset": len(vertex_data) + len(index_data),
+            "byteLength": len(color_data),
+            "target": 34962  # ARRAY_BUFFER
+        })
+        json_data["accessors"].append({
+            "bufferView": 2,
+            "componentType": 5126,  # FLOAT
+            "count": len(colors),
+            "type": "VEC3"
+        })
+
+    json_str = json.dumps(json_data)
+    json_buffer = json_str.encode()
+    
+    # Pad JSON to 4-byte alignment
+    json_padding = (4 - (len(json_buffer) % 4)) % 4
+    json_buffer += b' ' * json_padding
+
+    # Create GLB header and chunks
+    header = struct.pack('<4sII', b'glTF', 2, 12 + 8 + len(json_buffer) + 8 + len(buffer_data))
+    json_header = struct.pack('<II', len(json_buffer), 0x4E4F534A)  # JSON chunk
+    bin_header = struct.pack('<II', len(buffer_data), 0x004E4942)   # BIN chunk
+
+    # Combine everything
+    glb_data = header + json_header + json_buffer + bin_header + buffer_data
+    return glb_data
+
 def post_to_client(domain_name, stage, conn_id, message):
     try:
         endpoint_url = f"https://{domain_name}/{stage}"
-        print(f"Sending to client. URL: {endpoint_url}, ConnID: {conn_id}, Message: {json.dumps(message)}")
-        
         client = boto3.client('apigatewaymanagementapi', endpoint_url=endpoint_url)
         
-        if 'error' in message and isinstance(message['error'], str):
-            message['error'] = truncate_error_msg(message['error'], 1024)
+        if 'meshData' in message:
+            # Convert mesh data to GLB
+            glb_data = create_glb(
+                message['meshData']['vertices'],
+                message['meshData'].get('faces'),
+                message['meshData'].get('colors')
+            )
             
-        response = client.post_to_connection(
-            Data=json.dumps(message),
-            ConnectionId=conn_id
-        )
+            # Convert to base64
+            base64_glb = base64.b64encode(glb_data).decode('utf-8')
+            
+            # Send base64 GLB instead of raw mesh data
+            modified_message = {
+                'status': 'completed',
+                'glbData': f"data:model/gltf-binary;base64,{base64_glb}"
+            }
+            
+            client.post_to_connection(
+                Data=json.dumps(modified_message),
+                ConnectionId=conn_id
+            )
+        else:
+            if 'error' in message and isinstance(message['error'], str):
+                message['error'] = truncate_error_msg(message['error'], 1024)
+                
+            client.post_to_connection(
+                Data=json.dumps(message),
+                ConnectionId=conn_id
+            )
+            
         print(f"Successfully sent message to client")
-        return response
+        return True
     except Exception as e:
         print(f"Error sending to client: {str(e)}")
         raise
