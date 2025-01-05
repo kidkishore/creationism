@@ -96,15 +96,16 @@
     <script src="https://cdn.jsdelivr.net/npm/three@0.146.0/examples/jsm/loaders/OBJLoader.js"></script>
 
     <script>
-      // Replace with your WebSocket URL from CloudFormation output
-      const wsUrl = "YOUR_WEBSOCKET_URL";
+      const wsUrl = "wss://prn7s9wd73.execute-api.us-west-2.amazonaws.com/prod";
       let ws;
       let progressInterval;
+      let connectionAttempts = 0;
+      const MAX_RECONNECT_ATTEMPTS = 5;
 
       function startProgressAnimation() {
         const progressBar = document.getElementById("progressBar");
         let progress = 0;
-        const totalTime = 360; // 6 minutes in seconds
+        const totalTime = 360;
         const increment = 100 / totalTime;
 
         progressInterval = setInterval(() => {
@@ -125,32 +126,33 @@
       }
 
       function connectWebSocket() {
+        console.log(`Attempting to connect to WebSocket: ${wsUrl}`);
         ws = new WebSocket(wsUrl);
 
         ws.onopen = () => {
-          console.log("Connected to WebSocket");
+          console.log("WebSocket connection established successfully");
+          connectionAttempts = 0;
         };
 
         ws.onmessage = (event) => {
+          console.log("Received WebSocket message:", event.data);
           const data = JSON.parse(event.data);
           const loader = document.getElementById("loader");
           const result = document.getElementById("result");
 
           if (data.statusMessage) {
             result.innerHTML = `
-              <div class="bg-white p-4 rounded-lg shadow text-gray-700">
-                ${data.statusMessage}
-              </div>
+              <div class="bg-white p-4 rounded-lg shadow text-gray-700">${data.statusMessage}</div>
             `;
           } else if (data.error) {
+            console.error("Received error:", data.error);
             stopProgressAnimation();
             loader.classList.add("hidden");
             result.innerHTML = `
-              <div class="bg-red-50 p-4 rounded-lg text-red-700 border border-red-200">
-                ${data.error}
-              </div>
+              <div class="bg-red-50 p-4 rounded-lg text-red-700 border border-red-200">${data.error}</div>
             `;
           } else if (data.finalModelUrl) {
+            console.log("Received final model URL:", data.finalModelUrl);
             stopProgressAnimation();
             loader.classList.add("hidden");
             result.innerHTML = `
@@ -162,13 +164,37 @@
           }
         };
 
-        ws.onclose = () => {
-          console.log("WebSocket connection closed");
-          setTimeout(connectWebSocket, 3000);
+        ws.onerror = (error) => {
+          console.error("WebSocket error occurred:", error);
+        };
+
+        ws.onclose = (event) => {
+          console.log(
+            "WebSocket connection closed. Code:",
+            event.code,
+            "Reason:",
+            event.reason
+          );
+          connectionAttempts++;
+
+          if (connectionAttempts < MAX_RECONNECT_ATTEMPTS) {
+            console.log(
+              `Attempting to reconnect (${connectionAttempts}/${MAX_RECONNECT_ATTEMPTS})...`
+            );
+            setTimeout(connectWebSocket, 3000);
+          } else {
+            console.error(
+              "Max reconnection attempts reached. Please refresh the page."
+            );
+            document.getElementById("result").innerHTML = `
+              <div class="bg-red-50 p-4 rounded-lg text-red-700 border border-red-200">
+                Connection lost. Please refresh the page to try again.
+              </div>
+            `;
+          }
         };
       }
 
-      // Three.js setup
       const scene = new THREE.Scene();
       scene.background = new THREE.Color(0xffffff);
 
@@ -186,7 +212,6 @@
       light.position.set(0, 1, 1).normalize();
       scene.add(light);
 
-      // Add ambient light
       const ambientLight = new THREE.AmbientLight(0x404040);
       scene.add(ambientLight);
 
@@ -198,7 +223,6 @@
       }
       animate();
 
-      // Handle window resize
       window.addEventListener("resize", () => {
         const canvas = document.getElementById("threeCanvas");
         camera.aspect = canvas.clientWidth / canvas.clientHeight;
@@ -211,14 +235,11 @@
         loader.load(
           url,
           (obj) => {
-            // Clear existing model if any
             while (scene.children.length > 2) {
-              // Keep lights
               scene.remove(scene.children[2]);
             }
             scene.add(obj);
 
-            // Center and scale the model
             const box = new THREE.Box3().setFromObject(obj);
             const center = box.getCenter(new THREE.Vector3());
             const size = box.getSize(new THREE.Vector3());
@@ -241,7 +262,6 @@
         );
       }
 
-      // Connect WebSocket and handle form submission
       connectWebSocket();
 
       document
@@ -252,19 +272,27 @@
           const loader = document.getElementById("loader");
           const result = document.getElementById("result");
 
+          if (!ws || ws.readyState !== WebSocket.OPEN) {
+            console.error("WebSocket is not connected!");
+            result.innerHTML = `
+            <div class="bg-red-50 p-4 rounded-lg text-red-700 border border-red-200">
+              Not connected to server. Please refresh the page.
+            </div>
+          `;
+            return;
+          }
+
           result.innerHTML = "";
           loader.classList.remove("hidden");
           document.getElementById("progressBar").style.width = "0%";
           startProgressAnimation();
 
           try {
-            ws.send(
-              JSON.stringify({
-                action: "generate",
-                prompt: userInput,
-              })
-            );
+            const message = { action: "generate", prompt: userInput };
+            console.log("Sending WebSocket message:", message);
+            ws.send(JSON.stringify(message));
           } catch (error) {
+            console.error("Error sending WebSocket message:", error);
             stopProgressAnimation();
             loader.classList.add("hidden");
             result.innerHTML = `
