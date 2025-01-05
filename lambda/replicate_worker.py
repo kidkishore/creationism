@@ -10,7 +10,6 @@ job_table = dynamo.Table(os.environ['JOB_TABLE'])
 s3 = boto3.client('s3')
 
 def truncate_error_msg(error_msg, max_length=1024):
-    """Truncate error message to prevent DynamoDB size issues"""
     if len(error_msg) > max_length:
         return error_msg[:max_length] + "... (truncated)"
     return error_msg
@@ -22,7 +21,6 @@ def update_job_status(job_id, status, error=None, model_url=None):
         eav = {":s": status}
 
         if error:
-            # Truncate error message to prevent size issues
             expr += ", #e = :e"
             ean["#e"] = "error"
             eav[":e"] = truncate_error_msg(error)
@@ -39,7 +37,6 @@ def update_job_status(job_id, status, error=None, model_url=None):
         )
     except Exception as e:
         print(f"Error updating job status: {str(e)}")
-        # Try one more time with a shorter error message if it failed
         if error and "ValidationException" in str(e):
             try:
                 job_table.update_item(
@@ -55,14 +52,12 @@ def update_job_status(job_id, status, error=None, model_url=None):
                 print(f"Second attempt to update job status failed: {str(e2)}")
 
 def post_to_client(domain_name, stage, conn_id, message):
-    """Send a message to a connected WebSocket client"""
     try:
         endpoint_url = f"https://{domain_name}/{stage}"
         print(f"Sending to client. URL: {endpoint_url}, ConnID: {conn_id}, Message: {json.dumps(message)}")
         
         client = boto3.client('apigatewaymanagementapi', endpoint_url=endpoint_url)
         
-        # If we have an error message, truncate it to prevent size issues
         if 'error' in message and isinstance(message['error'], str):
             message['error'] = truncate_error_msg(message['error'], 1024)
             
@@ -87,7 +82,6 @@ def lambda_handler(event, context):
             domain_name = body["domainName"]
             stage = body["stage"]
 
-            # Print prediction ID and output for debugging
             print(f"Processing job {job_id} for prompt: {prompt}")
 
             create_resp = requests.post(
@@ -115,7 +109,6 @@ def lambda_handler(event, context):
             prediction_id = prediction["id"]
             print(f"Created prediction {prediction_id}")
 
-            # Poll for completion
             while True:
                 poll_resp = requests.get(
                     f"https://api.replicate.com/v1/predictions/{prediction_id}",
@@ -132,9 +125,18 @@ def lambda_handler(event, context):
                     output = prediction.get("output")
                     print(f"Prediction succeeded! Output: {json.dumps(output)}")
                     
-                    # Process the successful output here
-                    # ... (rest of the success handling code remains the same)
+                    if isinstance(output, str):
+                        model_url = output
+                    elif isinstance(output, dict):
+                        model_url = output.get('file')
+                    else:
+                        raise ValueError(f"Unexpected output format: {output}")
                     
+                    update_job_status(job_id, "COMPLETED", model_url=model_url)
+                    post_to_client(domain_name, stage, conn_id, {
+                        "finalModelUrl": model_url,
+                        "status": "completed"
+                    })
                     break
                 elif status in ["failed", "canceled"]:
                     error_msg = f"Prediction {status}"
