@@ -36,7 +36,7 @@ def lambda_handler(event, context):
                 }
             )
             
-            print(f"Replicate API Response: {create_resp.status_code} - {create_resp.text}")  # Debug log
+            print(f"Replicate API Response: {create_resp.status_code} - {create_resp.text}")
             
             if create_resp.status_code != 201:
                 msg = f"Replicate error: {create_resp.text}"
@@ -50,7 +50,7 @@ def lambda_handler(event, context):
 
             # 2) Poll for completion
             while status not in ['succeeded', 'failed', 'canceled']:
-                time.sleep(3)  # avoid tight loops
+                time.sleep(3)
                 poll_resp = requests.get(
                     f"https://api.replicate.com/v1/predictions/{prediction_id}",
                     headers={"Authorization": f"Token {replicate_token}"}
@@ -58,26 +58,102 @@ def lambda_handler(event, context):
                 poll_data = poll_resp.json()
                 status = poll_data["status"]
                 
-                # Send progress update to client
                 post_to_client(domain_name, stage, conn_id, {
                     "statusMessage": f"Still working... Current status: {status}"
                 })
 
-            if status != 'succeeded':
+            if status == 'succeeded':
+                print(f"✓ Prediction succeeded! Full response: {json.dumps(poll_data)}")
+                
+                output = poll_data.get("output")
+                print(f"Output from Replicate: {output}")
+                
+                if isinstance(output, dict):
+                    json_file = output.get("json_file")
+                elif isinstance(output, str):
+                    json_file = output
+                else:
+                    json_file = None
+                
+                if not json_file:
+                    msg = f"No JSON file in output. Output: {output}"
+                    update_job_status(job_id, "FAILED", msg)
+                    post_to_client(domain_name, stage, conn_id, {"error": msg})
+                    continue
+
+                # Download and process point cloud
+                try:
+                    file_resp = requests.get(json_file)
+                    if file_resp.status_code != 200:
+                        raise Exception(f"Failed to download point cloud. Status: {file_resp.status_code}")
+                    
+                    point_cloud_data = file_resp.json()
+                    obj_content = convert_point_cloud_to_obj(point_cloud_data)
+                    
+                    # Store in S3
+                    s3_key = f"generated-3d/{job_id}.obj"
+                    bucket_name = os.environ["BUCKET_NAME"]
+                    
+                    s3.put_object(
+                        Bucket=bucket_name,
+                        Key=s3_key,
+                        Body=obj_content,
+                        ContentType="application/x-tgif"
+                    )
+                    
+                    presigned_url = s3.generate_presigned_url(
+                        "get_object",
+                        Params={"Bucket": bucket_name, "Key": s3_key},
+                        ExpiresIn=3600
+                    )
+                    
+                    # Update status and notify client
+                    update_job_status(job_id, "COMPLETED", model_url=presigned_url)
+                    post_to_client(domain_name, stage, conn_id, {
+                        "status": "completed",
+                        "finalModelUrl": presigned_url,
+                        "message": "Model generation complete!"
+                    })
+                    
+                except Exception as e:
+                    error_msg = f"Error processing point cloud: {str(e)}"
+                    print(f"Error: {error_msg}")
+                    update_job_status(job_id, "FAILED", error_msg)
+                    post_to_client(domain_name, stage, conn_id, {"error": error_msg})
+                    
+            else:
                 msg = f"Prediction failed or was canceled. Status: {status}"
                 update_job_status(job_id, "FAILED", msg)
                 post_to_client(domain_name, stage, conn_id, {"error": msg})
-                continue
 
-            # Success path continues here...
-            print(f"Prediction succeeded! Output: {json.dumps(poll_data.get('output'))}")
-            
         except Exception as e:
             error_msg = f"Error processing job: {str(e)}"
             print(f"Exception: {error_msg}")
             update_job_status(job_id, "FAILED", error_msg)
             post_to_client(domain_name, stage, conn_id, {"error": error_msg})
-            continue
+
+def convert_point_cloud_to_obj(point_cloud_data):
+    """Convert point cloud JSON data to OBJ format."""
+    coords = point_cloud_data.get("coords", [])
+    colors = point_cloud_data.get("colors", [])
+    
+    if not coords or len(coords) != len(colors):
+        raise ValueError("Invalid point cloud data format")
+    
+    # Generate OBJ content
+    obj_lines = []
+    
+    # Add vertices with colors
+    for i, (coord, color) in enumerate(zip(coords, colors)):
+        x, y, z = coord
+        r, g, b = color
+        # Write vertex position and color
+        obj_lines.append(f"v {x} {y} {z} {r} {g} {b}")
+        
+        # Create point primitive
+        obj_lines.append(f"p {i+1}")
+    
+    return "\n".join(obj_lines).encode('utf-8')
 
 def update_job_status(job_id, status, error=None, model_url=None):
     try:
