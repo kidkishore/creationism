@@ -27,7 +27,7 @@ def lambda_handler(event, context):
                 "Content-Type": "application/json"
             },
             json={
-                "version": "1a4da7adf0bc84cd786c1df41c02db3097d899f5c159f5fd5814a11117bdf02b",  # Replace with actual Point-E model version
+                "version": "b96a2f33cc8e33e0fd4c28c52c50b0db8d9d220389658601b4976d4eb5c6847a",  # Point-E model version
                 "input": {
                     "prompt": prompt,
                     "output_format": "json_file"
@@ -61,6 +61,8 @@ def lambda_handler(event, context):
 
         if status != 'succeeded':
             msg = "Prediction failed or canceled."
+        else:
+            print(f"✓ Prediction succeeded! Proceeding to handle output")
             update_job_status(job_id, "FAILED", msg)
             post_to_client(domain_name, stage, conn_id, {"error": msg})
             continue
@@ -134,8 +136,22 @@ def lambda_handler(event, context):
         update_job_status(job_id, "COMPLETED", None, model_url=presigned_url)
 
         # 5) Notify user with final URL
-        post_to_client(domain_name, stage, conn_id,
-                       {"finalModelUrl": presigned_url})
+        try:
+            print(f"Attempting to send final URL to client: {presigned_url}")
+            final_message = {
+                "status": "completed",
+                "finalModelUrl": presigned_url,
+                "message": "Model generation complete!"
+            }
+            post_to_client(domain_name, stage, conn_id, final_message)
+            print(f"Successfully sent final message to client: {json.dumps(final_message)}")
+        except Exception as e:
+            print(f"Error sending final URL to client: {str(e)}")
+            # Try one more time with just the URL
+            try:
+                post_to_client(domain_name, stage, conn_id, {"finalModelUrl": presigned_url})
+            except Exception as e2:
+                print(f"Second attempt to send URL failed: {str(e2)}")
 
 def convert_point_cloud_to_obj(point_cloud_data):
     """Convert point cloud JSON data to OBJ format."""
@@ -181,9 +197,19 @@ def update_job_status(job_id, status, error=None, model_url=None):
     )
 
 def post_to_client(domain_name, stage, conn_id, message):
-    endpoint_url = f"https://{domain_name}/{stage}"
-    client = boto3.client('apigatewaymanagementapi', endpoint_url=endpoint_url)
-    client.post_to_connection(
-        Data=json.dumps(message),
-        ConnectionId=conn_id
-    )
+    """Send a message to a connected WebSocket client"""
+    try:
+        endpoint_url = f"https://{domain_name}/{stage}"
+        print(f"Sending to client. URL: {endpoint_url}, ConnID: {conn_id}, Message: {json.dumps(message)}")  # Debug log
+        
+        client = boto3.client('apigatewaymanagementapi', endpoint_url=endpoint_url)
+        
+        response = api_client.post_to_connection(
+            Data=json.dumps(message),
+            ConnectionId=conn_id
+        )
+        print(f"Successfully sent message to client. Response: {response}")
+        return response
+    except Exception as e:
+        print(f"Error sending to client: {str(e)}")  # Debug log
+        raise
