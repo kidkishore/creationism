@@ -67,8 +67,20 @@ def lambda_handler(event, context):
 
         # 3) Handle the JSON point cloud output
         print(f"Full Replicate response: {json.dumps(poll_data, indent=2)}")  # Debug log
-        output = poll_data.get("output", {})
-        json_file = output.get("json_file")
+        output = poll_data.get("output")
+        print(f"Output type: {type(output)}")
+        print(f"Output content: {output}")
+        
+        # Handle different output structures
+        if isinstance(output, dict):
+            json_file = output.get("json_file")
+        elif isinstance(output, str):
+            # If output is directly a URL
+            json_file = output
+        else:
+            json_file = None
+            
+        print(f"Extracted json_file: {json_file}")
         
         if not json_file:
             msg = f"No JSON file in output. Full response: {json.dumps(poll_data)}"
@@ -77,9 +89,18 @@ def lambda_handler(event, context):
             continue
 
         # Download the JSON point cloud data
-        file_resp = requests.get(json_file)
-        if file_resp.status_code != 200:
-            msg = f"Failed to download point cloud data from {json_file}"
+        try:
+            file_resp = requests.get(json_file)
+            print(f"File response status: {file_resp.status_code}")
+            print(f"File response content: {file_resp.text[:500]}...")  # Print first 500 chars of response
+            
+            if file_resp.status_code != 200:
+                msg = f"Failed to download point cloud data from {json_file}. Status: {file_resp.status_code}"
+                update_job_status(job_id, "FAILED", msg)
+                post_to_client(domain_name, stage, conn_id, {"error": msg})
+                continue
+        except Exception as e:
+            msg = f"Exception while downloading point cloud data: {str(e)}"
             update_job_status(job_id, "FAILED", msg)
             post_to_client(domain_name, stage, conn_id, {"error": msg})
             continue
