@@ -93,7 +93,6 @@
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/three@0.146.0/build/three.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/three@0.146.0/examples/jsm/loaders/OBJLoader.js"></script>
 
     <script>
       const wsUrl = "wss://prn7s9wd73.execute-api.us-west-2.amazonaws.com/prod";
@@ -151,8 +150,8 @@
             result.innerHTML = `
               <div class="bg-red-50 p-4 rounded-lg text-red-700 border border-red-200">${data.error}</div>
             `;
-          } else if (data.finalModelUrl) {
-            console.log("Received final model URL:", data.finalModelUrl);
+          } else if (data.meshData) {
+            console.log("Received mesh data:", data.meshData);
             stopProgressAnimation();
             loader.classList.add("hidden");
             result.innerHTML = `
@@ -160,7 +159,66 @@
                 3D model generated successfully! Loading into viewer... 🎉
               </div>
             `;
-            load3DModel(data.finalModelUrl);
+
+            // Create geometry from received data
+            const geometry = new THREE.BufferGeometry();
+
+            // Add vertices
+            const vertices = new Float32Array(data.meshData.vertices.flat());
+            geometry.setAttribute(
+              "position",
+              new THREE.BufferAttribute(vertices, 3)
+            );
+
+            // Add faces if available
+            if (data.meshData.faces) {
+              const indices = new Uint16Array(data.meshData.faces.flat());
+              geometry.setIndex(new THREE.BufferAttribute(indices, 1));
+            }
+
+            // Add colors if available
+            if (data.meshData.colors) {
+              const colors = new Float32Array(data.meshData.colors.flat());
+              geometry.setAttribute(
+                "color",
+                new THREE.BufferAttribute(colors, 3)
+              );
+            }
+
+            geometry.computeVertexNormals();
+
+            // Create mesh
+            const material = new THREE.MeshPhongMaterial({
+              vertexColors: true,
+              side: THREE.DoubleSide,
+            });
+
+            const mesh = new THREE.Mesh(geometry, material);
+
+            // Clear previous model and add new one
+            while (scene.children.length > 2) {
+              scene.remove(scene.children[2]);
+            }
+            scene.add(mesh);
+
+            // Center and scale
+            const box = new THREE.Box3().setFromObject(mesh);
+            const center = box.getCenter(new THREE.Vector3());
+            const size = box.getSize(new THREE.Vector3());
+
+            const maxDim = Math.max(size.x, size.y, size.z);
+            const scale = 2 / maxDim;
+            mesh.scale.multiplyScalar(scale);
+            mesh.position.sub(center.multiplyScalar(scale));
+
+            // Add orbit controls
+            controls = new THREE.OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true;
+            controls.dampingFactor = 0.05;
+            controls.screenSpacePanning = false;
+            controls.enableZoom = true;
+            controls.autoRotate = true;
+            controls.autoRotateSpeed = 2.0;
           }
         };
 
@@ -219,6 +277,9 @@
 
       function animate() {
         requestAnimationFrame(animate);
+        if (controls) {
+          controls.update();
+        }
         renderer.render(scene, camera);
       }
       animate();
@@ -229,38 +290,6 @@
         camera.updateProjectionMatrix();
         renderer.setSize(canvas.clientWidth, canvas.clientHeight);
       });
-
-      function load3DModel(url) {
-        const loader = new THREE.OBJLoader();
-        loader.load(
-          url,
-          (obj) => {
-            while (scene.children.length > 2) {
-              scene.remove(scene.children[2]);
-            }
-            scene.add(obj);
-
-            const box = new THREE.Box3().setFromObject(obj);
-            const center = box.getCenter(new THREE.Vector3());
-            const size = box.getSize(new THREE.Vector3());
-
-            const maxDim = Math.max(size.x, size.y, size.z);
-            const scale = 2 / maxDim;
-            obj.scale.multiplyScalar(scale);
-
-            obj.position.sub(center.multiplyScalar(scale));
-          },
-          undefined,
-          (error) => {
-            console.error("Error loading 3D model:", error);
-            document.getElementById("result").innerHTML = `
-              <div class="bg-red-50 p-4 rounded-lg text-red-700 border border-red-200">
-                Error loading 3D model: ${error.message}
-              </div>
-            `;
-          }
-        );
-      }
 
       connectWebSocket();
 
