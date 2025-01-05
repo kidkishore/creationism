@@ -19,7 +19,7 @@ def lambda_handler(event, context):
         domain_name = body["domainName"]
         stage = body["stage"]
 
-        # 1) Call Replicate to start - using Shap-E model
+        # 1) Call Replicate to start - using Point-E model
         create_resp = requests.post(
             "https://api.replicate.com/v1/predictions",
             headers={
@@ -27,12 +27,10 @@ def lambda_handler(event, context):
                 "Content-Type": "application/json"
             },
             json={
-                "version": "abfc30dc09f51fe27602185f313860c32d501e7a4af6c5a23872eae80e651cb8",
+                "version": "1a4da7adf0bc84cd786c1df41c02db3097d899f5c159f5fd5814a11117bdf02b",  # Replace with actual Point-E model version
                 "input": {
                     "prompt": prompt,
-                    "save_mesh": True,
-                    "num_inference_steps": 32,
-                    "guidance_scale": 15.0
+                    "output_format": "json_file"
                 }
             }
         )
@@ -67,45 +65,42 @@ def lambda_handler(event, context):
             post_to_client(domain_name, stage, conn_id, {"error": msg})
             continue
 
-        # 3) Download & store result in S3
+        # 3) Handle the JSON point cloud output
         print(f"Full Replicate response: {json.dumps(poll_data, indent=2)}")  # Debug log
-        output = poll_data.get("output")
-        print(f"Output value: {output}")  # Debug log
+        output = poll_data.get("output", {})
+        json_file = output.get("json_file")
         
-        if output is None:
-            msg = f"No output from Replicate. Full response: {json.dumps(poll_data)}"
+        if not json_file:
+            msg = f"No JSON file in output. Full response: {json.dumps(poll_data)}"
             update_job_status(job_id, "FAILED", msg)
             post_to_client(domain_name, stage, conn_id, {"error": msg})
             continue
 
-        # Handle list output from Shap-E model
-        if isinstance(output, list):
-            # Find the .obj file URL
-            obj_urls = [url for url in output if url.endswith('.obj')]
-            if not obj_urls:
-                msg = f"No .obj file found in output: {json.dumps(output)}"
-                update_job_status(job_id, "FAILED", msg)
-                post_to_client(domain_name, stage, conn_id, {"error": msg})
-                continue
-            model_url = obj_urls[0]
-        else:
-            msg = f"Unexpected output format from Replicate: {type(output)}. Full output: {json.dumps(output)}"
-            update_job_status(job_id, "FAILED", msg)
-            post_to_client(domain_name, stage, conn_id, {"error": msg})
-            continue
-        file_resp = requests.get(model_url)
+        # Download the JSON point cloud data
+        file_resp = requests.get(json_file)
         if file_resp.status_code != 200:
-            msg = f"Failed to download 3D model from {model_url}"
+            msg = f"Failed to download point cloud data from {json_file}"
             update_job_status(job_id, "FAILED", msg)
             post_to_client(domain_name, stage, conn_id, {"error": msg})
             continue
 
+        # Convert point cloud data to OBJ format
+        try:
+            point_cloud_data = file_resp.json()
+            obj_content = convert_point_cloud_to_obj(point_cloud_data)
+        except Exception as e:
+            msg = f"Failed to convert point cloud to OBJ: {str(e)}"
+            update_job_status(job_id, "FAILED", msg)
+            post_to_client(domain_name, stage, conn_id, {"error": msg})
+            continue
+
+        # Store the converted OBJ file in S3
         s3_key = f"generated-3d/{job_id}.obj"
         bucket_name = os.environ["BUCKET_NAME"]
         s3.put_object(
             Bucket=bucket_name,
             Key=s3_key,
-            Body=file_resp.content,
+            Body=obj_content,
             ContentType="application/x-tgif"  # Proper MIME type for .obj files
         )
         presigned_url = s3.generate_presigned_url(
@@ -121,6 +116,28 @@ def lambda_handler(event, context):
         post_to_client(domain_name, stage, conn_id,
                        {"finalModelUrl": presigned_url})
 
+def convert_point_cloud_to_obj(point_cloud_data):
+    """Convert point cloud JSON data to OBJ format."""
+    coords = point_cloud_data.get("coords", [])
+    colors = point_cloud_data.get("colors", [])
+    
+    if not coords or len(coords) != len(colors):
+        raise ValueError("Invalid point cloud data format")
+    
+    # Generate OBJ content
+    obj_lines = []
+    
+    # Add vertices with colors
+    for i, (coord, color) in enumerate(zip(coords, colors)):
+        x, y, z = coord
+        r, g, b = color
+        # Write vertex position and color
+        obj_lines.append(f"v {x} {y} {z} {r} {g} {b}")
+        
+        # Create point primitive
+        obj_lines.append(f"p {i+1}")
+    
+    return "\n".join(obj_lines).encode('utf-8')
 
 def update_job_status(job_id, status, error=None, model_url=None):
     expr = "SET #s = :s"
@@ -141,7 +158,6 @@ def update_job_status(job_id, status, error=None, model_url=None):
         ExpressionAttributeNames=ean,
         ExpressionAttributeValues=eav
     )
-
 
 def post_to_client(domain_name, stage, conn_id, message):
     endpoint_url = f"https://{domain_name}/{stage}"
