@@ -23,7 +23,7 @@ jobs:
           aws-region: ${{ secrets.AWS_REGION }}
 
       # Step 2: Ensure S3 Bucket exists (for Lambda zips)
-      - name: Ensure S3 Bucket for Lambda Exists
+      - name: Ensure S3 Bucket exists
         run: |
           aws s3api head-bucket --bucket creationism-lambda-code || \
           aws s3api create-bucket --bucket creationism-lambda-code --region ${{ secrets.AWS_REGION }} \
@@ -35,14 +35,10 @@ jobs:
       - name: Package WebSocket Handler
         run: |
           mkdir -p build/websocket
-          python3 -m venv build/websocket/venv
-          source build/websocket/venv/bin/activate
-          pip install requests boto3
-          deactivate
-          cp lambda/websocket_handler.py build/websocket/
-          cp -r build/websocket/venv/lib/python3.*/site-packages/* build/websocket/
-
           cd build/websocket
+          pip install --target . boto3 requests --no-deps
+          cp ../../lambda/websocket_handler.py .
+          find . -type d -name "__pycache__" -exec rm -rf {} +
           zip -r websocket_handler.zip ./*
           TIMESTAMP=$(date +%s)
           export WEBSOCKET_ZIP="websocket_handler_${TIMESTAMP}.zip"
@@ -60,14 +56,12 @@ jobs:
       - name: Package Replicate Worker
         run: |
           mkdir -p build/worker
-          python3 -m venv build/worker/venv
-          source build/worker/venv/bin/activate
-          pip install requests boto3 numpy
-          deactivate
-          cp lambda/replicate_worker.py build/worker/
-          cp -r build/worker/venv/lib/python3.*/site-packages/* build/worker/
-
           cd build/worker
+          pip install --target . boto3 requests numpy --no-deps
+          cp ../../lambda/replicate_worker.py .
+          find . -type d -name "__pycache__" -exec rm -rf {} +
+          find . -type d -name "tests" -exec rm -rf {} +
+          find . -type f -name "*.so" -exec strip {} + || true
           zip -r replicate_worker.zip ./*
           TIMESTAMP=$(date +%s)
           export WORKER_ZIP="replicate_worker_${TIMESTAMP}.zip"

@@ -176,7 +176,9 @@ Resources:
         S3Bucket: !Ref LambdaCodeBucket
         S3Key: !Ref WorkerHandlerKey
       Timeout: 900
-      MemorySize: 1024
+      MemorySize: 3008
+      EphemeralStorage:
+        Size: 512
       Environment:
         Variables:
           REPLICATE_API_KEY: !Ref ReplicateApiKey
