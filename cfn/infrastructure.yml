@@ -190,6 +190,8 @@ Resources:
           REPLICATE_API_KEY: !Ref ReplicateApiKey
           JOB_TABLE: !Ref JobStatusTable
           BUCKET_NAME: !Ref ImageStorageBucket
+      Architectures:
+        - x86_64
 
   # Event Source Mapping from SQS to Worker Lambda
   WorkerEventSourceMapping:
@@ -316,6 +318,8 @@ Resources:
         S3Key: !Ref NumpyLayerKey
       CompatibleRuntimes:
         - python3.9
+      CompatibleArchitectures:
+        - x86_64
 
 Outputs:
   WebSocketEndpoint:

@@ -34,15 +34,26 @@ jobs:
       #################################################
       - name: Create NumPy Layer
         run: |
-          mkdir -p layer/python
-          pip install numpy --target layer/python
-          cd layer
+          mkdir -p numpy_layer/python
+          cd numpy_layer
+          # Create a requirements.txt file
+          echo "numpy==1.24.3" > requirements.txt
+          # Install numpy in the python directory
+          pip install -r requirements.txt --target python/
+          # Remove unnecessary files
+          cd python
+          find . -type d -name "tests" -exec rm -rf {} +
+          find . -type d -name "__pycache__" -exec rm -rf {} +
+          find . -name "*.pyc" -delete
+          cd ..
+          # Create the layer zip
           zip -r numpy_layer.zip python/
           TIMESTAMP=$(date +%s)
           export NUMPY_LAYER="numpy_layer_${TIMESTAMP}.zip"
           mv numpy_layer.zip "$NUMPY_LAYER"
           aws s3 cp "$NUMPY_LAYER" "s3://creationism-lambda-code/$NUMPY_LAYER"
           echo "NUMPY_LAYER=$NUMPY_LAYER" >> $GITHUB_ENV
+          cd ..
 
       #################################################
       # Package WebSocket Handler Lambda
@@ -72,22 +83,32 @@ jobs:
         run: |
           mkdir -p build/worker
           cd build/worker
-          pip install --target . \
+          # Create a clean virtual environment
+          python -m venv venv
+          source venv/bin/activate
+          # Install dependencies
+          pip install \
             boto3 \
             requests \
             idna \
             charset-normalizer \
             urllib3 \
-            certifi
+            certifi \
+            --target .
+          # Copy the Lambda handler
           cp ../../lambda/replicate_worker.py .
+          # Clean up
           find . -type d -name "__pycache__" -exec rm -rf {} +
           find . -type d -name "tests" -exec rm -rf {} +
           find . -type d -name "*.dist-info" -exec rm -rf {} +
           find . -type d -name "*.egg-info" -exec rm -rf {} +
+          find . -name "*.pyc" -delete
+          # Create deployment package
           zip -r replicate_worker.zip ./*
           TIMESTAMP=$(date +%s)
           export WORKER_ZIP="replicate_worker_${TIMESTAMP}.zip"
           mv replicate_worker.zip "$WORKER_ZIP"
+          deactivate
           cd ../..
           echo "WORKER_ZIP=$WORKER_ZIP" >> $GITHUB_ENV
 
