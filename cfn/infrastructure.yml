@@ -19,6 +19,10 @@ Parameters:
     Description: The Replicate API key.
     NoEcho: true
 
+  NumpyLayerKey:
+    Type: String
+    Description: Key for the NumPy Lambda layer.
+
 Resources:
   # DynamoDB Table (job status)
   JobStatusTable:
@@ -175,6 +179,8 @@ Resources:
       Code:
         S3Bucket: !Ref LambdaCodeBucket
         S3Key: !Ref WorkerHandlerKey
+      Layers:
+        - !Ref NumpyLayer
       Timeout: 900
       MemorySize: 3008
       EphemeralStorage:
@@ -298,6 +304,18 @@ Resources:
       FunctionName: !GetAtt WebSocketHandlerFunction.Arn
       Principal: apigateway.amazonaws.com
       SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${WebSocketApi}/*"
+
+  # Add NumPy Layer
+  NumpyLayer:
+    Type: AWS::Lambda::LayerVersion
+    Properties:
+      LayerName: numpy-layer
+      Description: NumPy library for Python
+      Content:
+        S3Bucket: !Ref LambdaCodeBucket
+        S3Key: !Ref NumpyLayerKey
+      CompatibleRuntimes:
+        - python3.9
 
 Outputs:
   WebSocketEndpoint:

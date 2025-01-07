@@ -30,6 +30,21 @@ jobs:
             --create-bucket-configuration LocationConstraint=${{ secrets.AWS_REGION }}
 
       #################################################
+      # Create NumPy Layer
+      #################################################
+      - name: Create NumPy Layer
+        run: |
+          mkdir -p layer/python
+          pip install numpy --target layer/python
+          cd layer
+          zip -r numpy_layer.zip python/
+          TIMESTAMP=$(date +%s)
+          export NUMPY_LAYER="numpy_layer_${TIMESTAMP}.zip"
+          mv numpy_layer.zip "$NUMPY_LAYER"
+          aws s3 cp "$NUMPY_LAYER" "s3://creationism-lambda-code/$NUMPY_LAYER"
+          echo "NUMPY_LAYER=$NUMPY_LAYER" >> $GITHUB_ENV
+
+      #################################################
       # Package WebSocket Handler Lambda
       #################################################
       - name: Package WebSocket Handler
@@ -57,41 +72,19 @@ jobs:
         run: |
           mkdir -p build/worker
           cd build/worker
-          
-          # Create and activate virtual environment
-          python -m venv venv
-          source venv/bin/activate
-          
-          # Install dependencies into a temporary directory
-          mkdir python
-          pip install \
+          pip install --target . \
             boto3 \
             requests \
-            numpy \
             idna \
             charset-normalizer \
             urllib3 \
-            certifi \
-            --target ./python
-          
-          # Copy the Lambda handler
-          cp ../../lambda/replicate_worker.py python/
-          
-          # Clean up unnecessary files
-          cd python
-          find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
-          find . -type d -name "tests" -exec rm -rf {} + 2>/dev/null || true
-          find . -type d -name "*.dist-info" -exec rm -rf {} + 2>/dev/null || true
-          find . -type d -name "*.egg-info" -exec rm -rf {} + 2>/dev/null || true
-          find . -type f -name "*.pyc" -delete
-          find . -type f -name "*.pyo" -delete
-          find . -type f -name "*.pyd" -delete
-          
-          # Create deployment package
-          zip -r ../replicate_worker.zip .
-          cd ..
-          
-          # Generate timestamp and set environment variable
+            certifi
+          cp ../../lambda/replicate_worker.py .
+          find . -type d -name "__pycache__" -exec rm -rf {} +
+          find . -type d -name "tests" -exec rm -rf {} +
+          find . -type d -name "*.dist-info" -exec rm -rf {} +
+          find . -type d -name "*.egg-info" -exec rm -rf {} +
+          zip -r replicate_worker.zip ./*
           TIMESTAMP=$(date +%s)
           export WORKER_ZIP="replicate_worker_${TIMESTAMP}.zip"
           mv replicate_worker.zip "$WORKER_ZIP"
@@ -115,4 +108,5 @@ jobs:
               LambdaCodeBucket=creationism-lambda-code \
               WebsocketHandlerKey=${{ env.WEBSOCKET_ZIP }} \
               WorkerHandlerKey=${{ env.WORKER_ZIP }} \
+              NumpyLayerKey=${{ env.NUMPY_LAYER }} \
               ReplicateApiKey=${{ secrets.REPLICATE_API_KEY }}
