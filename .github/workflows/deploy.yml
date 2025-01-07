@@ -57,11 +57,22 @@ jobs:
         run: |
           mkdir -p build/worker
           cd build/worker
-          pip install --target . boto3 requests numpy --no-deps
+          # Install all required dependencies
+          pip install --target . \
+            boto3 \
+            requests \
+            numpy \
+            idna \
+            charset-normalizer \
+            urllib3 \
+            certifi
           cp ../../lambda/replicate_worker.py .
           find . -type d -name "__pycache__" -exec rm -rf {} +
           find . -type d -name "tests" -exec rm -rf {} +
           find . -type f -name "*.so" -exec strip {} + || true
+          # Remove unnecessary files to reduce size
+          find . -type d -name "*.dist-info" -exec rm -rf {} +
+          find . -type d -name "*.egg-info" -exec rm -rf {} +
           zip -r replicate_worker.zip ./*
           TIMESTAMP=$(date +%s)
           export WORKER_ZIP="replicate_worker_${TIMESTAMP}.zip"
