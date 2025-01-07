@@ -8,6 +8,7 @@ import base64
 import struct
 import numpy as np
 from io import BytesIO
+import traceback
 
 dynamo = boto3.resource('dynamodb')
 job_table = dynamo.Table(os.environ['JOB_TABLE'])
@@ -238,9 +239,12 @@ def post_to_client(domain_name, stage, conn_id, message):
         raise
 
 def lambda_handler(event, context):
+    print(f"Worker received event: {json.dumps(event)}")  # Debug log
     replicate_token = os.environ["REPLICATE_API_KEY"]
+    
     for record in event["Records"]:
         try:
+            print(f"Processing record: {json.dumps(record)}")  # Debug log
             body = json.loads(record["body"])
             job_id = body["job_id"]
             prompt = body["prompt"]
@@ -315,8 +319,8 @@ def lambda_handler(event, context):
                 time.sleep(3)
 
         except Exception as e:
-            error_msg = f"Error processing job: {str(e)}"
-            print(f"Exception in worker: {error_msg}")
+            print(f"Error processing record: {str(e)}")
+            print(f"Full error details: {traceback.format_exc()}")  # Add full traceback
             try:
                 update_job_status(job_id, "FAILED", error_msg)
                 post_to_client(domain_name, stage, conn_id, {"error": truncate_error_msg(error_msg)})

@@ -192,6 +192,27 @@ Resources:
       EventSourceArn: !GetAtt ReplicateQueue.Arn
       FunctionName: !Ref ReplicateWorkerFunction
       BatchSize: 1
+      Enabled: true
+      FunctionResponseTypes:
+        - ReportBatchItemFailures
+
+  # Add explicit SQS queue policy
+  ReplicateQueuePolicy:
+    Type: AWS::SQS::QueuePolicy
+    Properties:
+      Queues:
+        - !Ref ReplicateQueue
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action:
+              - sqs:ReceiveMessage
+              - sqs:DeleteMessage
+              - sqs:GetQueueAttributes
+            Resource: !GetAtt ReplicateQueue.Arn
 
   # WebSocket API
   WebSocketApi:

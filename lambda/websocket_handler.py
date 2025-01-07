@@ -57,7 +57,7 @@ def on_disconnect(conn_id):
 def on_generate(conn_id, prompt, domain_name, stage):
     """Handle generation requests"""
     try:
-        print(f"Generate request. Prompt: {prompt}, Connection: {conn_id}")  # Debug log
+        print(f"Generate request. Prompt: {prompt}, Connection: {conn_id}")
         
         if not prompt:
             return send_to_client(domain_name, stage, conn_id, 
@@ -65,6 +65,8 @@ def on_generate(conn_id, prompt, domain_name, stage):
 
         # Create job record
         job_id = str(uuid.uuid4())
+        print(f"Created job ID: {job_id}")  # Debug log
+        
         job_table.put_item(Item={
             "job_id": job_id,
             "status": "PENDING",
@@ -72,6 +74,7 @@ def on_generate(conn_id, prompt, domain_name, stage):
             "connectionId": conn_id,
             "created_at": int(time.time())
         })
+        print(f"Job record created in DynamoDB")  # Debug log
 
         # Queue job for worker
         message = {
@@ -82,11 +85,12 @@ def on_generate(conn_id, prompt, domain_name, stage):
             "stage": stage
         }
         
-        print(f"Queueing message: {json.dumps(message)}")  # Debug log
-        sqs.send_message(
+        print(f"Queueing message to SQS: {json.dumps(message)}")  # Debug log
+        sqs_response = sqs.send_message(
             QueueUrl=os.environ['REPLICATE_QUEUE_URL'],
             MessageBody=json.dumps(message)
         )
+        print(f"SQS response: {json.dumps(sqs_response)}")  # Debug log
 
         # Notify client
         send_to_client(domain_name, stage, conn_id, {
@@ -98,12 +102,12 @@ def on_generate(conn_id, prompt, domain_name, stage):
         return {"statusCode": 200, "body": "Job queued"}
         
     except Exception as e:
-        print(f"Error in generate handler: {str(e)}")  # Debug log
+        print(f"Error in generate handler: {str(e)}")
         error_message = {"error": f"Internal error: {str(e)}"}
         try:
             send_to_client(domain_name, stage, conn_id, error_message)
         except:
-            pass  # If we can't send to client, at least we logged the error
+            pass
         return {"statusCode": 500, "body": str(e)}
 
 def send_to_client(domain_name, stage, conn_id, message):
