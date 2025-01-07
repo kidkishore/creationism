@@ -36,10 +36,14 @@ jobs:
         run: |
           mkdir -p numpy_layer/python
           cd numpy_layer
-          # Create a requirements.txt file
-          echo "numpy==1.24.3" > requirements.txt
-          # Install numpy in the python directory
-          pip install -r requirements.txt --target python/
+          # Install numpy using the pre-built wheel
+          pip install numpy==1.24.3 \
+            --platform manylinux2014_x86_64 \
+            --target python/ \
+            --only-binary=:all: \
+            --implementation cp \
+            --python-version 3.9 \
+            --no-deps
           # Remove unnecessary files
           cd python
           find . -type d -name "tests" -exec rm -rf {} +
@@ -83,18 +87,16 @@ jobs:
         run: |
           mkdir -p build/worker
           cd build/worker
-          # Create a clean virtual environment
-          python -m venv venv
-          source venv/bin/activate
           # Install dependencies
           pip install \
+            --target . \
+            --only-binary=:all: \
             boto3 \
             requests \
             idna \
             charset-normalizer \
             urllib3 \
-            certifi \
-            --target .
+            certifi
           # Copy the Lambda handler
           cp ../../lambda/replicate_worker.py .
           # Clean up
@@ -108,7 +110,6 @@ jobs:
           TIMESTAMP=$(date +%s)
           export WORKER_ZIP="replicate_worker_${TIMESTAMP}.zip"
           mv replicate_worker.zip "$WORKER_ZIP"
-          deactivate
           cd ../..
           echo "WORKER_ZIP=$WORKER_ZIP" >> $GITHUB_ENV
 
